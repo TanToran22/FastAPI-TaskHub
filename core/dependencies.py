@@ -1,13 +1,12 @@
-from app.repositories.sample_repository import SampleRepository
-from app.services.sample_service import SampleService
+from app.repositories.task_repository import TaskRepository
+from app.services.task_service import TaskService
 
-# Singleton repository provider for in-memory persistence across requests in Day 1
-_sample_repo_singleton = SampleRepository()
-
-
-def get_sample_repository() -> SampleRepository:
-    return _sample_repo_singleton
+_task_repo_singleton = TaskRepository()
 
 
-def get_sample_service() -> SampleService:
-    return SampleService(repository=get_sample_repository())
+def get_task_repository() -> TaskRepository:
+    return _task_repo_singleton
+
+
+def get_task_service() -> TaskService:
+    return TaskService(repository=get_task_repository())
