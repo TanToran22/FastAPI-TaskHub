@@ -1,8 +1,4 @@
 from typing import Literal
- day-2-database
-
-
-main
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,16 +15,11 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
 
- day-2-database
-
     # Database
- main
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/taskhub_db",
         description="Async PostgreSQL Connection URL",
     )
-
-day-2-database
 
     # Security
     SECRET_KEY: str = Field(
@@ -40,6 +31,5 @@ day-2-database
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-main
 
 settings = Settings()
