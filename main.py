@@ -7,7 +7,13 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.api_router import api_router
 from app.core.config import settings
-from app.core.exceptions import AppException, BadRequestException, NotFoundException
+from app.core.database import engine
+from app.core.exceptions import (
+    AppException,
+    BadRequestException,
+    ConflictException,
+    NotFoundException,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,6 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting up TaskHub Application...")
     yield
     logger.info("Shutting down TaskHub Application...")
+    await engine.dispose()
 
 
 def create_application() -> FastAPI:
@@ -48,6 +55,16 @@ def create_application() -> FastAPI:
         logger.warning(f"BadRequest: path={request.url.path} message={exc.message}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": exc.message},
+        )
+
+    @application.exception_handler(ConflictException)
+    async def conflict_handler(
+        request: Request, exc: ConflictException
+    ) -> JSONResponse:
+        logger.warning(f"Conflict: path={request.url.path} message={exc.message}")
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
             content={"detail": exc.message},
         )
 

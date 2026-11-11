@@ -1,48 +1,58 @@
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core import constants
-from app.core.exceptions import NotFoundException
-from app.models.internal_task import InternalTask
+from app.core.exceptions import ConflictException, NotFoundException
+from app.models.models import Task
 from app.repositories.task_repository import TaskRepository
-from app.schemas.task import TaskCreate, TaskUpdate
+from app.schemas.base import PaginatedResponse
+from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 
 class TaskService:
     def __init__(self, repository: TaskRepository) -> None:
         self.repository = repository
 
-    def get_task_or_404(self, task_id: int) -> InternalTask:
-        task = self.repository.get_by_id(task_id)
+    async def get_task_or_404(self, db: AsyncSession, task_id: int) -> Task:
+        task = await self.repository.get_by_id(db, id=task_id)
         if not task:
             raise NotFoundException(constants.MSG_TASK_NOT_FOUND)
         return task
 
-    def list_tasks(self, skip: int = 0, limit: int = 100) -> list[InternalTask]:
-        return self.repository.get_all(skip=skip, limit=limit)
-
-    def create_task(self, payload: TaskCreate) -> InternalTask:
-        return self.repository.create(
-            title=payload.title,
-            description=payload.description,
+    async def list_tasks(
+        self, db: AsyncSession, skip: int = 0, limit: int = 20
+    ) -> PaginatedResponse[TaskResponse]:
+        items = await self.repository.get_multi_ordered(db, skip=skip, limit=limit)
+        total = await self.repository.count(db)
+        return PaginatedResponse[TaskResponse](
+            items=[TaskResponse.model_validate(item) for item in items],
+            total=total,
+            skip=skip,
+            limit=limit,
         )
 
-    def patch_task(self, task_id: int, payload: TaskUpdate) -> InternalTask:
-        self.get_task_or_404(task_id)
+    async def create_task(self, db: AsyncSession, payload: TaskCreate) -> Task:
+        try:
+            return await self.repository.create(db, obj_in=payload)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictException(
+                constants.MSG_CONFLICT_RESOURCE, details=str(exc.orig)
+            ) from exc
 
-        update_data = payload.model_dump(exclude_unset=True)
-        title = update_data.get("title")
-        description = update_data.get("description")
-        update_description = "description" in update_data
+    async def patch_task(
+        self, db: AsyncSession, task_id: int, payload: TaskUpdate
+    ) -> Task:
+        task = await self.get_task_or_404(db, task_id)
+        try:
+            return await self.repository.update(db, db_obj=task, obj_in=payload)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictException(
+                constants.MSG_CONFLICT_RESOURCE, details=str(exc.orig)
+            ) from exc
 
-        updated = self.repository.update(
-            task_id=task_id,
-            title=title,
-            description=description,
-            update_description=update_description,
-        )
-        if not updated:
-            raise NotFoundException(constants.MSG_TASK_NOT_FOUND)
-        return updated
-
-    def delete_task(self, task_id: int) -> None:
-        deleted = self.repository.delete(task_id)
+    async def delete_task(self, db: AsyncSession, task_id: int) -> None:
+        deleted = await self.repository.delete(db, id=task_id)
         if not deleted:
             raise NotFoundException(constants.MSG_TASK_NOT_FOUND)
