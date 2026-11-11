@@ -1,6 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 from fastapi import APIRouter, HTTPException, status
+
 from app.schemas.sample import SampleCreate, SampleResponse
 
 router = APIRouter()
@@ -19,7 +21,7 @@ async def create_sample(payload: SampleCreate) -> Any:
         "id": sample_id,
         "title": payload.title,
         "description": payload.description,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
     }
     _FAKE_DB[sample_id] = item
     return item
