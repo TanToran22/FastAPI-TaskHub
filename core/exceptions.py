@@ -14,7 +14,3 @@ class NotFoundException(AppException):
 
 class BadRequestException(AppException):
     pass
-
-
-class ConflictException(AppException):
-    pass

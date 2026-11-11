@@ -1,26 +1,9 @@
-# Database & Schema Length Bounds
-USER_EMAIL_MAX_LENGTH = 255
-USER_FULL_NAME_MAX_LENGTH = 255
-USER_PASSWORD_MAX_LENGTH = 255
-
-WORKSPACE_NAME_MAX_LENGTH = 255
-PROJECT_NAME_MAX_LENGTH = 255
-LABEL_NAME_MAX_LENGTH = 100
-LABEL_COLOR_MAX_LENGTH = 50
-
+# Validation lengths & bounds
 TASK_TITLE_MIN_LENGTH = 1
 TASK_TITLE_MAX_LENGTH = 200
 TASK_DESCRIPTION_MAX_LENGTH = 1000
 
-# Pagination Defaults
-DEFAULT_PAGINATION_SKIP = 0
-DEFAULT_PAGINATION_LIMIT = 20
-MAX_PAGINATION_LIMIT = 100
-
-# Error Messages
+# Error messages
 MSG_TASK_NOT_FOUND = "Task not found."
-MSG_PROJECT_NOT_FOUND = "Project not found."
-MSG_USER_NOT_FOUND = "User not found."
 MSG_FIELD_CANNOT_BE_NULL = "Field '{field_name}' cannot be null if provided."
 MSG_INVALID_CREDENTIALS = "Could not validate credentials."
-MSG_CONFLICT_RESOURCE = "Resource conflict or foreign key constraint violation."
