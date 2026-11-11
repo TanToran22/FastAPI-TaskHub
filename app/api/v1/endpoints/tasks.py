@@ -1,27 +1,30 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import constants
+from app.core.database import get_db
 from app.core.dependencies import get_task_service
 from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
 from app.services.task_service import TaskService
 
 router = APIRouter()
 
-SkipParam = Annotated[
+SkipQuery = Annotated[
     int,
     Query(
         ge=0,
         description="Số lượng bản ghi bỏ qua",
     ),
 ]
-LimitParam = Annotated[
+
+LimitQuery = Annotated[
     int,
     Query(
         ge=constants.MIN_PAGINATION_LIMIT,
         le=constants.MAX_PAGINATION_LIMIT,
-        description="Số lượng bản ghi tối đa",
+        description="Số lượng bản ghi tối đa lấy về",
     ),
 ]
 
@@ -30,16 +33,15 @@ LimitParam = Annotated[
     "",
     response_model=TaskListResponse,
     summary="Lấy danh sách tasks",
-    responses={
-        200: {"description": "Danh sách tasks kèm tổng số lượng"},
-    },
+    responses={200: {"description": "Danh sách tasks kèm phân trang"}},
 )
 async def list_tasks(
-    skip: SkipParam = constants.DEFAULT_PAGINATION_SKIP,
-    limit: LimitParam = constants.DEFAULT_PAGINATION_LIMIT,
+    skip: SkipQuery = constants.DEFAULT_PAGINATION_SKIP,
+    limit: LimitQuery = constants.DEFAULT_PAGINATION_LIMIT,
+    db: AsyncSession = Depends(get_db),
     service: TaskService = Depends(get_task_service),
-) -> TaskListResponse:
-    return service.list_tasks(skip=skip, limit=limit)
+) -> Any:
+    return await service.list_tasks(db=db, skip=skip, limit=limit)
 
 
 @router.post(
@@ -49,14 +51,16 @@ async def list_tasks(
     summary="Tạo mới task",
     responses={
         201: {"description": "Task được tạo thành công"},
-        422: {"description": "Dữ liệu đầu vào không hợp lệ"},
+        409: {"description": "Khóa ngoại không hợp lệ"},
+        422: {"description": "Dữ liệu validation không hợp lệ"},
     },
 )
 async def create_task(
     payload: TaskCreate,
+    db: AsyncSession = Depends(get_db),
     service: TaskService = Depends(get_task_service),
-) -> TaskResponse:
-    return service.create_task(payload)
+) -> Any:
+    return await service.create_task(db=db, payload=payload)
 
 
 @router.get(
@@ -70,9 +74,10 @@ async def create_task(
 )
 async def get_task(
     task_id: int,
+    db: AsyncSession = Depends(get_db),
     service: TaskService = Depends(get_task_service),
-) -> TaskResponse:
-    return TaskResponse.model_validate(service.get_task_or_404(task_id))
+) -> Any:
+    return await service.get_task_or_404(db=db, task_id=task_id)
 
 
 @router.patch(
@@ -82,15 +87,17 @@ async def get_task(
     responses={
         200: {"description": "Cập nhật task thành công"},
         404: {"description": "Không tìm thấy task"},
+        409: {"description": "Khóa ngoại không hợp lệ"},
         422: {"description": "Dữ liệu cập nhật không hợp lệ hoặc truyền null"},
     },
 )
 async def patch_task(
     task_id: int,
     payload: TaskUpdate,
+    db: AsyncSession = Depends(get_db),
     service: TaskService = Depends(get_task_service),
-) -> TaskResponse:
-    return service.patch_task(task_id, payload)
+) -> Any:
+    return await service.patch_task(db=db, task_id=task_id, payload=payload)
 
 
 @router.delete(
@@ -104,6 +111,7 @@ async def patch_task(
 )
 async def delete_task(
     task_id: int,
+    db: AsyncSession = Depends(get_db),
     service: TaskService = Depends(get_task_service),
 ) -> None:
-    service.delete_task(task_id)
+    await service.delete_task(db=db, task_id=task_id)

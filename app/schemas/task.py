@@ -2,9 +2,9 @@ from datetime import datetime
 
 from pydantic import Field, field_validator
 
-from app.core import constants
-from app.core.messages import MSG_FIELD_CANNOT_BE_NULL
-from app.schemas.base import CoreBaseSchema
+from app.core import constants, messages
+from app.models.enums import TaskPriority, TaskStatus
+from app.schemas.base import CoreBaseSchema, PaginatedResponse
 
 
 class TaskBase(CoreBaseSchema):
@@ -17,6 +17,11 @@ class TaskBase(CoreBaseSchema):
         default=None,
         max_length=constants.TASK_DESCRIPTION_MAX_LENGTH,
     )
+    status: TaskStatus = Field(default=TaskStatus.TODO)
+    priority: TaskPriority = Field(default=TaskPriority.MEDIUM)
+    due_date: datetime | None = Field(default=None)
+    project_id: int | None = Field(default=None, gt=0)
+    assignee_id: int | None = Field(default=None, gt=0)
 
 
 class TaskCreate(TaskBase):
@@ -33,21 +38,26 @@ class TaskUpdate(CoreBaseSchema):
         default=None,
         max_length=constants.TASK_DESCRIPTION_MAX_LENGTH,
     )
+    status: TaskStatus | None = Field(default=None)
+    priority: TaskPriority | None = Field(default=None)
+    due_date: datetime | None = Field(default=None)
+    project_id: int | None = Field(default=None, gt=0)
+    assignee_id: int | None = Field(default=None, gt=0)
 
     @field_validator("title")
     @classmethod
     def validate_title_not_null(cls, value: str | None) -> str | None:
         if value is None:
-            raise ValueError(MSG_FIELD_CANNOT_BE_NULL.format(field_name="title"))
+            raise ValueError(
+                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name="title")
+            )
         return value
 
 
 class TaskResponse(TaskBase):
     id: int
+    created_by: int | None = None
     created_at: datetime
-    updated_at: datetime
 
 
-class TaskListResponse(CoreBaseSchema):
-    items: list[TaskResponse]
-    total: int
+TaskListResponse = PaginatedResponse[TaskResponse]

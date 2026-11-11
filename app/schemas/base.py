@@ -1,4 +1,8 @@
+from typing import Generic, TypeVar
+
 from pydantic import BaseModel, ConfigDict
+
+T = TypeVar("T")
 
 
 class CoreBaseSchema(BaseModel):
@@ -6,3 +10,10 @@ class CoreBaseSchema(BaseModel):
         str_strip_whitespace=True,
         from_attributes=True,
     )
+
+
+class PaginatedResponse(CoreBaseSchema, Generic[T]):
+    items: list[T]
+    total: int
+    skip: int
+    limit: int
