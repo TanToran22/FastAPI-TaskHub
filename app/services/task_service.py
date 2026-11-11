@@ -1,8 +1,8 @@
-from app.core import constants
+from app.core import messages
 from app.core.exceptions import NotFoundException
 from app.models.internal_task import InternalTask
 from app.repositories.task_repository import TaskRepository
-from app.schemas.task import TaskCreate, TaskUpdate
+from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
 
 
 class TaskService:
@@ -12,19 +12,25 @@ class TaskService:
     def get_task_or_404(self, task_id: int) -> InternalTask:
         task = self.repository.get_by_id(task_id)
         if not task:
-            raise NotFoundException(constants.MSG_TASK_NOT_FOUND)
+            raise NotFoundException(messages.MSG_TASK_NOT_FOUND)
         return task
 
-    def list_tasks(self, skip: int = 0, limit: int = 100) -> list[InternalTask]:
-        return self.repository.get_all(skip=skip, limit=limit)
+    def list_tasks(self, skip: int = 0, limit: int = 100) -> TaskListResponse:
+        items = self.repository.get_all(skip=skip, limit=limit)
+        total = self.repository.count()
+        return TaskListResponse(
+            items=[TaskResponse.model_validate(item) for item in items],
+            total=total,
+        )
 
-    def create_task(self, payload: TaskCreate) -> InternalTask:
-        return self.repository.create(
+    def create_task(self, payload: TaskCreate) -> TaskResponse:
+        task = self.repository.create(
             title=payload.title,
             description=payload.description,
         )
+        return TaskResponse.model_validate(task)
 
-    def patch_task(self, task_id: int, payload: TaskUpdate) -> InternalTask:
+    def patch_task(self, task_id: int, payload: TaskUpdate) -> TaskResponse:
         self.get_task_or_404(task_id)
 
         update_data = payload.model_dump(exclude_unset=True)
@@ -38,11 +44,8 @@ class TaskService:
             description=description,
             update_description=update_description,
         )
-        if not updated:
-            raise NotFoundException(constants.MSG_TASK_NOT_FOUND)
-        return updated
+        return TaskResponse.model_validate(updated)
 
     def delete_task(self, task_id: int) -> None:
-        deleted = self.repository.delete(task_id)
-        if not deleted:
-            raise NotFoundException(constants.MSG_TASK_NOT_FOUND)
+        self.get_task_or_404(task_id)
+        self.repository.delete(task_id)

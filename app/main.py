@@ -1,13 +1,14 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.v1.api_router import api_router
 from app.core.config import settings
-from app.core.exceptions import AppException, BadRequestException, NotFoundException
+from app.core.exceptions import AppException
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,34 +32,23 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
-    @application.exception_handler(NotFoundException)
-    async def not_found_handler(
-        request: Request, exc: NotFoundException
-    ) -> JSONResponse:
-        logger.warning(f"NotFound: path={request.url.path} message={exc.message}")
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"detail": exc.message},
-        )
-
-    @application.exception_handler(BadRequestException)
-    async def bad_request_handler(
-        request: Request, exc: BadRequestException
-    ) -> JSONResponse:
-        logger.warning(f"BadRequest: path={request.url.path} message={exc.message}")
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"detail": exc.message},
-        )
-
     @application.exception_handler(AppException)
-    async def generic_app_exception_handler(
+    async def app_exception_handler(
         request: Request, exc: AppException
     ) -> JSONResponse:
-        logger.error(f"AppException: path={request.url.path} message={exc.message}")
+        log_msg = f"AppException ({exc.status_code}): path={request.url.path} message={exc.message}"
+        if exc.status_code >= 500:
+            logger.error(log_msg)
+        else:
+            logger.warning(log_msg)
+
+        content: dict[str, Any] = {"detail": exc.message}
+        if exc.details is not None:
+            content["details"] = exc.details
+
         return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": exc.message},
+            status_code=exc.status_code,
+            content=content,
         )
 
     application.include_router(api_router, prefix=settings.API_V1_STR)

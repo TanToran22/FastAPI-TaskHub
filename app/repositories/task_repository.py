@@ -8,6 +8,9 @@ class TaskRepository:
         self._storage: dict[int, InternalTask] = {}
         self._id_counter: int = 1
 
+    def count(self) -> int:
+        return len(self._storage)
+
     def get_by_id(self, task_id: int) -> InternalTask | None:
         return self._storage.get(task_id)
 

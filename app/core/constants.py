@@ -3,7 +3,8 @@ TASK_TITLE_MIN_LENGTH = 1
 TASK_TITLE_MAX_LENGTH = 200
 TASK_DESCRIPTION_MAX_LENGTH = 1000
 
-# Error messages
-MSG_TASK_NOT_FOUND = "Task not found."
-MSG_FIELD_CANNOT_BE_NULL = "Field '{field_name}' cannot be null if provided."
-MSG_INVALID_CREDENTIALS = "Could not validate credentials."
+# Pagination bounds
+DEFAULT_PAGINATION_SKIP = 0
+DEFAULT_PAGINATION_LIMIT = 100
+MIN_PAGINATION_LIMIT = 1
+MAX_PAGINATION_LIMIT = 100

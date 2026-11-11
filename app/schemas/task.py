@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import Field, field_validator
 
 from app.core import constants
+from app.core.messages import MSG_FIELD_CANNOT_BE_NULL
 from app.schemas.base import CoreBaseSchema
 
 
@@ -37,15 +38,16 @@ class TaskUpdate(CoreBaseSchema):
     @classmethod
     def validate_title_not_null(cls, value: str | None) -> str | None:
         if value is None:
-            raise ValueError(
-                constants.MSG_FIELD_CANNOT_BE_NULL.format(field_name="title")
-            )
+            raise ValueError(MSG_FIELD_CANNOT_BE_NULL.format(field_name="title"))
         return value
 
 
-class TaskResponse(CoreBaseSchema):
+class TaskResponse(TaskBase):
     id: int
-    title: str
-    description: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class TaskListResponse(CoreBaseSchema):
+    items: list[TaskResponse]
+    total: int
