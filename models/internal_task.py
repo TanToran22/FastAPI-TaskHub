@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 
 @dataclass
-class InternalSample:
+class InternalTask:
     id: int
     title: str
     description: str | None
@@ -12,11 +12,14 @@ class InternalSample:
 
     @classmethod
     def create_new(
-        cls, sample_id: int, title: str, description: str | None
-    ) -> "InternalSample":
+        cls,
+        task_id: int,
+        title: str,
+        description: str | None,
+    ) -> "InternalTask":
         now = datetime.now(UTC)
         return cls(
-            id=sample_id,
+            id=task_id,
             title=title,
             description=description,
             created_at=now,
