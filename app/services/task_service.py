@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import messages
 from app.core.exceptions import ConflictException, NotFoundException
+from app.core.pagination import Pagination
 from app.models.models import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
@@ -21,16 +22,15 @@ class TaskService:
     async def list_tasks(
         self,
         db: AsyncSession,
-        skip: int = 0,
-        limit: int = 100,
+        pagination: Pagination,
     ) -> TaskListResponse:
-        items = await self.repository.get_multi_ordered(db, skip=skip, limit=limit)
+        items = await self.repository.get_multi(db, pagination=pagination)
         total = await self.repository.count(db)
         return TaskListResponse(
             items=[TaskResponse.model_validate(item) for item in items],
             total=total,
-            skip=skip,
-            limit=limit,
+            skip=pagination.skip,
+            limit=pagination.limit,
         )
 
     async def create_task(
@@ -44,10 +44,7 @@ class TaskService:
             return TaskResponse.model_validate(task)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictException(
-                "Foreign key constraint violation: "
-                "referenced project or assignee does not exist."
-            ) from exc
+            raise ConflictException(messages.MSG_FK_CONSTRAINT_VIOLATION) from exc
 
     async def patch_task(
         self,
@@ -62,10 +59,7 @@ class TaskService:
             return TaskResponse.model_validate(updated)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictException(
-                "Foreign key constraint violation: "
-                "referenced project or assignee does not exist."
-            ) from exc
+            raise ConflictException(messages.MSG_FK_CONSTRAINT_VIOLATION) from exc
 
     async def delete_task(self, db: AsyncSession, task_id: int) -> None:
         await self.get_task_or_404(db, task_id)

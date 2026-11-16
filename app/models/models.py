@@ -8,7 +8,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
-    Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -47,7 +47,7 @@ task_labels = Table(
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(
         String(constants.USER_EMAIL_MAX_LENGTH),
         unique=True,
@@ -99,7 +99,6 @@ class User(Base):
         "Task",
         back_populates="creator",
         foreign_keys="Task.created_by",
-        passive_deletes=True,
     )
     comments: Mapped[list["Comment"]] = relationship(
         "Comment",
@@ -111,7 +110,7 @@ class User(Base):
 class Workspace(Base):
     __tablename__ = "workspaces"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(
         String(constants.WORKSPACE_NAME_MAX_LENGTH),
         nullable=False,
@@ -145,8 +144,15 @@ class Workspace(Base):
 
 class WorkspaceMember(Base):
     __tablename__ = "workspace_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            name="uq_workspace_members_workspace_user",
+        ),
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("workspaces.id", ondelete="CASCADE"),
@@ -173,7 +179,7 @@ class WorkspaceMember(Base):
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("workspaces.id", ondelete="CASCADE"),
@@ -184,7 +190,10 @@ class Project(Base):
         String(constants.PROJECT_NAME_MAX_LENGTH),
         nullable=False,
     )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(
+        String(constants.PROJECT_DESCRIPTION_MAX_LENGTH),
+        nullable=True,
+    )
     status: Mapped[ProjectStatus] = mapped_column(
         SQLEnum(ProjectStatus, native_enum=True),
         default=ProjectStatus.ACTIVE,
@@ -217,7 +226,7 @@ class Project(Base):
 class Task(Base):
     __tablename__ = "tasks"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -234,7 +243,10 @@ class Task(Base):
         String(constants.TASK_TITLE_MAX_LENGTH),
         nullable=False,
     )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(
+        String(constants.TASK_DESCRIPTION_MAX_LENGTH),
+        nullable=True,
+    )
     status: Mapped[TaskStatus] = mapped_column(
         SQLEnum(TaskStatus, native_enum=True),
         default=TaskStatus.TODO,
@@ -253,7 +265,7 @@ class Task(Base):
     )
     created_by: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -290,8 +302,15 @@ class Task(Base):
 
 class Label(Base):
     __tablename__ = "labels"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "name",
+            name="uq_labels_project_name",
+        ),
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -321,7 +340,7 @@ class Label(Base):
 class Comment(Base):
     __tablename__ = "comments"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("tasks.id", ondelete="CASCADE"),
@@ -335,7 +354,7 @@ class Comment(Base):
         index=True,
     )
     content: Mapped[str] = mapped_column(
-        Text,
+        String(constants.COMMENT_CONTENT_MAX_LENGTH),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(

@@ -2,10 +2,11 @@ from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base
+from app.core.pagination import Pagination
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -29,11 +30,15 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self,
         db: AsyncSession,
         *,
-        skip: int = 0,
-        limit: int = 100,
+        pagination: Pagination,
+        order_by: Sequence[ColumnElement[Any]] | None = None,
     ) -> Sequence[ModelType]:
+        ordering = order_by if order_by is not None else (self.model.id.desc(),)
         stmt = (
-            select(self.model).order_by(self.model.id.desc()).offset(skip).limit(limit)
+            select(self.model)
+            .order_by(*ordering)
+            .offset(pagination.skip)
+            .limit(pagination.limit)
         )
         result = await db.execute(stmt)
         return result.scalars().all()

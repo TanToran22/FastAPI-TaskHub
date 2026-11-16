@@ -1,8 +1,10 @@
 from collections.abc import Sequence
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pagination import Pagination
 from app.models.models import Task
 from app.repositories.base import BaseRepository
 from app.schemas.task import TaskCreate, TaskUpdate
@@ -12,18 +14,20 @@ class TaskRepository(BaseRepository[Task, TaskCreate, TaskUpdate]):
     def __init__(self) -> None:
         super().__init__(model=Task)
 
-    async def get_multi_ordered(
+    async def get_multi(
         self,
         db: AsyncSession,
         *,
-        skip: int = 0,
-        limit: int = 100,
+        pagination: Pagination,
+        order_by: Sequence[ColumnElement[Any]] | None = None,
     ) -> Sequence[Task]:
-        stmt = (
-            select(self.model)
-            .order_by(self.model.created_at.desc(), self.model.id.desc())
-            .offset(skip)
-            .limit(limit)
+        ordering = (
+            order_by
+            if order_by is not None
+            else (self.model.created_at.desc(), self.model.id.desc())
         )
-        result = await db.execute(stmt)
-        return result.scalars().all()
+        return await super().get_multi(
+            db,
+            pagination=pagination,
+            order_by=ordering,
+        )

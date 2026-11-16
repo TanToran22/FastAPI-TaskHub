@@ -2,7 +2,7 @@
 
 Revision ID: 0001_initial_taskhub_tables
 Revises:
-Create Date: 2026-11-11 19:30:00.000000
+Create Date: 2026-11-16 10:00:00.000000
 
 """
 
@@ -54,7 +54,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_users_id"), "users", ["id"], unique=False)
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
 
     op.create_table(
@@ -71,7 +70,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_workspaces_id"), "workspaces", ["id"], unique=False)
     op.create_index(
         op.f("ix_workspaces_owner_id"),
         "workspaces",
@@ -95,12 +93,11 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_workspace_members_id"),
-        "workspace_members",
-        ["id"],
-        unique=False,
+        sa.UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            name="uq_workspace_members_workspace_user",
+        ),
     )
     op.create_index(
         op.f("ix_workspace_members_workspace_id"),
@@ -120,7 +117,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("workspace_id", sa.Integer(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("description", sa.String(length=2000), nullable=True),
         sa.Column(
             "status",
             project_status,
@@ -138,7 +135,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_projects_id"), "projects", ["id"], unique=False)
     op.create_index(
         op.f("ix_projects_workspace_id"),
         "projects",
@@ -152,7 +148,7 @@ def upgrade() -> None:
         sa.Column("project_id", sa.Integer(), nullable=True),
         sa.Column("assignee_id", sa.Integer(), nullable=True),
         sa.Column("title", sa.String(length=255), nullable=False),
-        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("description", sa.String(length=2000), nullable=True),
         sa.Column(
             "status",
             task_status,
@@ -175,10 +171,9 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["assignee_id"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_tasks_id"), "tasks", ["id"], unique=False)
     op.create_index(op.f("ix_tasks_project_id"), "tasks", ["project_id"], unique=False)
     op.create_index(
         op.f("ix_tasks_assignee_id"), "tasks", ["assignee_id"], unique=False
@@ -198,8 +193,12 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "project_id",
+            "name",
+            name="uq_labels_project_name",
+        ),
     )
-    op.create_index(op.f("ix_labels_id"), "labels", ["id"], unique=False)
     op.create_index(
         op.f("ix_labels_project_id"), "labels", ["project_id"], unique=False
     )
@@ -224,7 +223,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("task_id", sa.Integer(), nullable=False),
         sa.Column("author_id", sa.Integer(), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("content", sa.String(length=5000), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -235,7 +234,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_comments_id"), "comments", ["id"], unique=False)
     op.create_index(op.f("ix_comments_task_id"), "comments", ["task_id"], unique=False)
     op.create_index(
         op.f("ix_comments_author_id"), "comments", ["author_id"], unique=False

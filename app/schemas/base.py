@@ -17,3 +17,10 @@ class PaginatedResponse(CoreBaseSchema, Generic[T]):
     total: int
     skip: int
     limit: int
+
+
+class HealthResponse(CoreBaseSchema):
+    status: str
+    database: str
+    app_name: str
+    environment: str

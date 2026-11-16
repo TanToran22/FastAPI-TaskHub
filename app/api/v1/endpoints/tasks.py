@@ -1,32 +1,10 @@
-from typing import Annotated, Any
+from fastapi import APIRouter, status
 
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core import constants
-from app.core.database import get_db
-from app.core.dependencies import get_task_service
+from app.core.dependencies import DbSession, TaskServiceDep
+from app.core.pagination import PaginationDep
 from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
-from app.services.task_service import TaskService
 
 router = APIRouter()
-
-SkipQuery = Annotated[
-    int,
-    Query(
-        ge=0,
-        description="Số lượng bản ghi bỏ qua",
-    ),
-]
-
-LimitQuery = Annotated[
-    int,
-    Query(
-        ge=constants.MIN_PAGINATION_LIMIT,
-        le=constants.MAX_PAGINATION_LIMIT,
-        description="Số lượng bản ghi tối đa lấy về",
-    ),
-]
 
 
 @router.get(
@@ -36,12 +14,11 @@ LimitQuery = Annotated[
     responses={200: {"description": "Danh sách tasks kèm phân trang"}},
 )
 async def list_tasks(
-    skip: SkipQuery = constants.DEFAULT_PAGINATION_SKIP,
-    limit: LimitQuery = constants.DEFAULT_PAGINATION_LIMIT,
-    db: AsyncSession = Depends(get_db),
-    service: TaskService = Depends(get_task_service),
-) -> Any:
-    return await service.list_tasks(db=db, skip=skip, limit=limit)
+    pagination: PaginationDep,
+    db: DbSession,
+    service: TaskServiceDep,
+) -> TaskListResponse:
+    return await service.list_tasks(db=db, pagination=pagination)
 
 
 @router.post(
@@ -57,9 +34,9 @@ async def list_tasks(
 )
 async def create_task(
     payload: TaskCreate,
-    db: AsyncSession = Depends(get_db),
-    service: TaskService = Depends(get_task_service),
-) -> Any:
+    db: DbSession,
+    service: TaskServiceDep,
+) -> TaskResponse:
     return await service.create_task(db=db, payload=payload)
 
 
@@ -74,10 +51,11 @@ async def create_task(
 )
 async def get_task(
     task_id: int,
-    db: AsyncSession = Depends(get_db),
-    service: TaskService = Depends(get_task_service),
-) -> Any:
-    return await service.get_task_or_404(db=db, task_id=task_id)
+    db: DbSession,
+    service: TaskServiceDep,
+) -> TaskResponse:
+    task = await service.get_task_or_404(db=db, task_id=task_id)
+    return TaskResponse.model_validate(task)
 
 
 @router.patch(
@@ -94,9 +72,9 @@ async def get_task(
 async def patch_task(
     task_id: int,
     payload: TaskUpdate,
-    db: AsyncSession = Depends(get_db),
-    service: TaskService = Depends(get_task_service),
-) -> Any:
+    db: DbSession,
+    service: TaskServiceDep,
+) -> TaskResponse:
     return await service.patch_task(db=db, task_id=task_id, payload=payload)
 
 
@@ -111,7 +89,7 @@ async def patch_task(
 )
 async def delete_task(
     task_id: int,
-    db: AsyncSession = Depends(get_db),
-    service: TaskService = Depends(get_task_service),
+    db: DbSession,
+    service: TaskServiceDep,
 ) -> None:
     await service.delete_task(db=db, task_id=task_id)

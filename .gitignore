@@ -1,7 +1,11 @@
 __pycache__/
 *.py[cod]
-.venv/
-venv/
+*$py.class
 .env
-.ruff_cache/
+.venv/
+env/
+venv/
+*.sqlite3
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/

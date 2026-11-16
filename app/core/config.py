@@ -20,6 +20,10 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/taskhub_db",
         description="Async PostgreSQL Connection URL",
     )
+    TEST_DATABASE_URL: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/taskhub_test_db",
+        description="Isolated Async PostgreSQL Test Connection URL",
+    )
 
 
 settings = Settings()
