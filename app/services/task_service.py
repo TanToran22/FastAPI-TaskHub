@@ -1,6 +1,10 @@
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core import messages
-from app.core.exceptions import NotFoundException
-from app.models.internal_task import InternalTask
+from app.core.exceptions import ConflictException, NotFoundException
+from app.core.pagination import Pagination
+from app.models.models import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
 
@@ -9,43 +13,55 @@ class TaskService:
     def __init__(self, repository: TaskRepository) -> None:
         self.repository = repository
 
-    def get_task_or_404(self, task_id: int) -> InternalTask:
-        task = self.repository.get_by_id(task_id)
+    async def get_task_or_404(self, db: AsyncSession, task_id: int) -> Task:
+        task = await self.repository.get_by_id(db, item_id=task_id)
         if not task:
             raise NotFoundException(messages.MSG_TASK_NOT_FOUND)
         return task
 
-    def list_tasks(self, skip: int = 0, limit: int = 100) -> TaskListResponse:
-        items = self.repository.get_all(skip=skip, limit=limit)
-        total = self.repository.count()
+    async def list_tasks(
+        self,
+        db: AsyncSession,
+        pagination: Pagination,
+    ) -> TaskListResponse:
+        items = await self.repository.get_multi(db, pagination=pagination)
+        total = await self.repository.count(db)
         return TaskListResponse(
             items=[TaskResponse.model_validate(item) for item in items],
             total=total,
+            skip=pagination.skip,
+            limit=pagination.limit,
         )
 
-    def create_task(self, payload: TaskCreate) -> TaskResponse:
-        task = self.repository.create(
-            title=payload.title,
-            description=payload.description,
-        )
-        return TaskResponse.model_validate(task)
+    async def create_task(
+        self,
+        db: AsyncSession,
+        payload: TaskCreate,
+    ) -> TaskResponse:
+        try:
+            task = await self.repository.create(db, obj_in=payload)
+            await db.commit()
+            return TaskResponse.model_validate(task)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictException(messages.MSG_FK_CONSTRAINT_VIOLATION) from exc
 
-    def patch_task(self, task_id: int, payload: TaskUpdate) -> TaskResponse:
-        self.get_task_or_404(task_id)
+    async def patch_task(
+        self,
+        db: AsyncSession,
+        task_id: int,
+        payload: TaskUpdate,
+    ) -> TaskResponse:
+        task = await self.get_task_or_404(db, task_id)
+        try:
+            updated = await self.repository.update(db, db_obj=task, obj_in=payload)
+            await db.commit()
+            return TaskResponse.model_validate(updated)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictException(messages.MSG_FK_CONSTRAINT_VIOLATION) from exc
 
-        update_data = payload.model_dump(exclude_unset=True)
-        title = update_data.get("title")
-        description = update_data.get("description")
-        update_description = "description" in update_data
-
-        updated = self.repository.update(
-            task_id=task_id,
-            title=title,
-            description=description,
-            update_description=update_description,
-        )
-        return TaskResponse.model_validate(updated)
-
-    def delete_task(self, task_id: int) -> None:
-        self.get_task_or_404(task_id)
-        self.repository.delete(task_id)
+    async def delete_task(self, db: AsyncSession, task_id: int) -> None:
+        await self.get_task_or_404(db, task_id)
+        await self.repository.delete(db, item_id=task_id)
+        await db.commit()
