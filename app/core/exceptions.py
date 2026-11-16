@@ -27,5 +27,13 @@ class BadRequestException(AppException):
     status_code: int = status.HTTP_400_BAD_REQUEST
 
 
+class UnauthorizedException(AppException):
+    status_code: int = status.HTTP_401_UNAUTHORIZED
+
+
+class ForbiddenException(AppException):
+    status_code: int = status.HTTP_403_FORBIDDEN
+
+
 class ConflictException(AppException):
     status_code: int = status.HTTP_409_CONFLICT

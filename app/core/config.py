@@ -25,5 +25,10 @@ class Settings(BaseSettings):
         description="Isolated Async PostgreSQL Test Connection URL",
     )
 
+    SECRET_KEY: str = Field(
+        default="09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7",
+        description="Secret key for signing JWT tokens",
+    )
+
 
 settings = Settings()

@@ -55,7 +55,6 @@ async def test_list_tasks_pagination_and_ordering(client: AsyncClient) -> None:
     assert data["skip"] == 0
     assert data["limit"] == 2
     assert len(data["items"]) == 2
-    # Ordered by created_at desc, id desc -> Task 3 first, Task 2 second
     assert data["items"][0]["title"] == "Task 3"
     assert data["items"][1]["title"] == "Task 2"
 
