@@ -25,3 +25,7 @@ class NotFoundException(AppException):
 
 class BadRequestException(AppException):
     status_code: int = status.HTTP_400_BAD_REQUEST
+
+
+class ConflictException(AppException):
+    status_code: int = status.HTTP_409_CONFLICT
