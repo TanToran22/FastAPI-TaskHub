@@ -9,16 +9,24 @@ from app.core.database import get_db
 from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.models.enums import UserRole
 from app.models.models import User
+from app.repositories.project_repository import ProjectRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.workspace_member_repository import WorkspaceMemberRepository
+from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.auth_service import AuthService
+from app.services.project_service import ProjectService
 from app.services.task_service import TaskService
 from app.services.user_service import UserService
+from app.services.workspace_service import WorkspaceService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 _task_repo_singleton = TaskRepository()
 _user_repo_singleton = UserRepository()
+_workspace_repo_singleton = WorkspaceRepository()
+_workspace_member_repo_singleton = WorkspaceMemberRepository()
+_project_repo_singleton = ProjectRepository()
 
 
 def get_task_repository() -> TaskRepository:
@@ -27,6 +35,18 @@ def get_task_repository() -> TaskRepository:
 
 def get_user_repository() -> UserRepository:
     return _user_repo_singleton
+
+
+def get_workspace_repository() -> WorkspaceRepository:
+    return _workspace_repo_singleton
+
+
+def get_workspace_member_repository() -> WorkspaceMemberRepository:
+    return _workspace_member_repo_singleton
+
+
+def get_project_repository() -> ProjectRepository:
+    return _project_repo_singleton
 
 
 def get_task_service() -> TaskService:
@@ -41,10 +61,28 @@ def get_user_service() -> UserService:
     return UserService(user_repository=get_user_repository())
 
 
+def get_workspace_service() -> WorkspaceService:
+    return WorkspaceService(
+        workspace_repo=get_workspace_repository(),
+        member_repo=get_workspace_member_repository(),
+        user_repo=get_user_repository(),
+    )
+
+
+def get_project_service() -> ProjectService:
+    return ProjectService(
+        project_repo=get_project_repository(),
+        workspace_repo=get_workspace_repository(),
+        member_repo=get_workspace_member_repository(),
+    )
+
+
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+WorkspaceServiceDep = Annotated[WorkspaceService, Depends(get_workspace_service)]
+ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 
 
 async def get_current_user(

@@ -35,7 +35,6 @@ async def test_register_and_duplicate_email_returns_409(
 async def test_password_whitespace_preserved_and_72_byte_limit(
     client: AsyncClient,
 ) -> None:
-    # Password with leading/trailing spaces must NOT be stripped
     pw_with_spaces = "  secret123  "
     res = await client.post(
         "/api/v1/auth/register",
@@ -47,21 +46,18 @@ async def test_password_whitespace_preserved_and_72_byte_limit(
     )
     assert res.status_code == 201
 
-    # Login without spaces must fail
     fail_login = await client.post(
         "/api/v1/auth/login",
         json={"email": "space@example.com", "password": "secret123"},
     )
     assert fail_login.status_code == 401
 
-    # Login with exact spaces succeeds
     ok_login = await client.post(
         "/api/v1/auth/login",
         json={"email": "space@example.com", "password": pw_with_spaces},
     )
     assert ok_login.status_code == 200
 
-    # Password > 72 UTF-8 bytes must return 422
     over_72_bytes_pw = "a" * 73
     res_72 = await client.post(
         "/api/v1/auth/register",
@@ -106,7 +102,6 @@ async def test_login_jwt_claims_and_refresh_token_flow(
     assert "jti" in access_payload
     assert "iat" in access_payload
 
-    # Access token cannot be used on /refresh
     bad_refresh = await client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": tokens["access_token"]},
@@ -118,8 +113,7 @@ async def test_login_jwt_claims_and_refresh_token_flow(
         json={"refresh_token": tokens["refresh_token"]},
     )
     assert refresh_res.status_code == 200
-    new_tokens = refresh_res.json()
-    assert "access_token" in new_tokens
+    assert "access_token" in refresh_res.json()
 
 
 @pytest.mark.asyncio
@@ -146,10 +140,8 @@ async def test_user_me_profile_password_change_and_protected_tasks(
         "/api/v1/auth/login",
         json={"email": "charlie@example.com", "password": "oldpassword123"},
     )
-    access_token = login_res.json()["access_token"]
-    headers = {"Authorization": f"Bearer {access_token}"}
+    headers = {"Authorization": f"Bearer {login_res.json()['access_token']}"}
 
-    # Create task sets created_by to current_user.id
     task_res = await client.post(
         "/api/v1/tasks",
         json={"title": "Authenticated Task"},

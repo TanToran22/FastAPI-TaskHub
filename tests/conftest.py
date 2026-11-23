@@ -1,8 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import event
-
 os.environ.setdefault(
     "SECRET_KEY",
     "test_secret_key_for_isolated_pytest_suite_32chars_min",
@@ -10,6 +8,7 @@ os.environ.setdefault(
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,

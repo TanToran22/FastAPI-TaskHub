@@ -1,6 +1,13 @@
-# TaskHub API (Day 3: Authentication, User Profile & RBAC Core)
+# TaskHub API (Day 4: Workspace & Project Management)
 
-Backend FastAPI theo kiến trúc phân tầng Layered Architecture.
+Backend FastAPI theo kiến trúc phân tầng Layered Architecture (`endpoints` -> `services` -> `repositories` -> `schemas` / `models`).
+
+## Tiến độ
+
+- [x] **Day 1:** Core Setup & Layered Architecture
+- [x] **Day 2:** Database (SQLAlchemy 2.x Async & Alembic Migrations)
+- [x] **Day 3:** Authentication (JWT), User Profile & RBAC Core
+- [x] **Day 4:** Workspace & Project Management (Resource Ownership & Workspace RBAC: `OWNER`, `EDITOR`, `VIEWER`)
 
 ## Hướng dẫn khởi chạy & Kiểm thử
 
@@ -18,6 +25,7 @@ Backend FastAPI theo kiến trúc phân tầng Layered Architecture.
 3. Chạy kiểm thử tự động & Linter:
    ```bash
    ruff check .
+   ruff format --check .
    pytest -v
    ```
 
