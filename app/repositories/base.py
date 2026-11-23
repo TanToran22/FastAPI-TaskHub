@@ -1,8 +1,7 @@
-from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base
@@ -14,50 +13,43 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, model: type[ModelType]) -> None:
+    def __init__(self, model: type[ModelType]):
         self.model = model
 
-    async def get_by_id(
-        self,
-        db: AsyncSession,
-        item_id: int,
-    ) -> ModelType | None:
-        stmt = select(self.model).where(self.model.id == item_id)
-        result = await db.execute(stmt)
+    async def get_by_id(self, db: AsyncSession, id: Any) -> ModelType | None:
+        query = select(self.model).where(self.model.id == id)
+        result = await db.execute(query)
         return result.scalars().first()
 
     async def get_multi(
         self,
         db: AsyncSession,
         *,
-        pagination: Pagination,
-        order_by: Sequence[ColumnElement[Any]] | None = None,
-    ) -> Sequence[ModelType]:
-        ordering = order_by if order_by is not None else (self.model.id.desc(),)
-        stmt = (
-            select(self.model)
-            .order_by(*ordering)
-            .offset(pagination.skip)
-            .limit(pagination.limit)
+        pagination: Pagination | None = None,
+    ) -> list[ModelType]:
+        pag = pagination or Pagination()
+        order_cols = [self.model.id.desc()]
+        if hasattr(self.model, "created_at"):
+            order_cols.insert(0, self.model.created_at.desc())
+
+        query = (
+            select(self.model).order_by(*order_cols).offset(pag.skip).limit(pag.limit)
         )
-        result = await db.execute(stmt)
-        return result.scalars().all()
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     async def count(self, db: AsyncSession) -> int:
-        stmt = select(func.count()).select_from(self.model)
-        result = await db.execute(stmt)
-        return result.scalar() or 0
+        query = select(func.count(self.model.id))
+        result = await db.execute(query)
+        return result.scalar_one()
 
     async def create(
-        self,
-        db: AsyncSession,
-        *,
-        obj_in: CreateSchemaType | dict[str, Any],
+        self, db: AsyncSession, *, obj_in: CreateSchemaType | dict[str, Any]
     ) -> ModelType:
         if isinstance(obj_in, dict):
             create_data = obj_in
         else:
-            create_data = obj_in.model_dump()
+            create_data = obj_in.model_dump(exclude_unset=True)
 
         db_obj = self.model(**create_data)
         db.add(db_obj)
@@ -86,10 +78,9 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await db.refresh(db_obj)
         return db_obj
 
-    async def delete(self, db: AsyncSession, *, item_id: int) -> bool:
-        db_obj = await self.get_by_id(db, item_id)
-        if not db_obj:
-            return False
-        await db.delete(db_obj)
-        await db.flush()
-        return True
+    async def delete(self, db: AsyncSession, *, id: Any) -> ModelType | None:
+        obj = await self.get_by_id(db, id=id)
+        if obj:
+            await db.delete(obj)
+            await db.flush()
+        return obj

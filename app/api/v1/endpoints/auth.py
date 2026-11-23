@@ -16,11 +16,9 @@ router = APIRouter()
     "/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Đăng ký tài khoản người dùng mới",
+    summary="Register a new user account",
     responses={
-        201: {"description": "Đăng ký thành công"},
-        409: {"description": "Email đã tồn tại trong hệ thống"},
-        422: {"description": "Dữ liệu đầu vào không hợp lệ"},
+        409: {"description": "Email already registered"},
     },
 )
 async def register(
@@ -28,18 +26,18 @@ async def register(
     db: DbSession,
     service: AuthServiceDep,
 ) -> UserResponse:
-    return await service.register(db=db, payload=payload)
+    user = await service.register_user(db, payload)
+    return UserResponse.model_validate(user)
 
 
 @router.post(
     "/login",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Đăng nhập và nhận JWT Access + Refresh Token",
+    summary="Authenticate user and return JWT tokens",
     responses={
-        200: {"description": "Đăng nhập thành công"},
-        401: {"description": "Email hoặc mật khẩu không chính xác"},
-        403: {"description": "Tài khoản đã bị vô hiệu hóa"},
+        401: {"description": "Invalid email or password"},
+        403: {"description": "Inactive user account"},
     },
 )
 async def login(
@@ -47,18 +45,17 @@ async def login(
     db: DbSession,
     service: AuthServiceDep,
 ) -> TokenResponse:
-    return await service.login(db=db, payload=payload)
+    return await service.authenticate_user(db, payload)
 
 
 @router.post(
     "/refresh",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Cấp lại cặp Access Token và Refresh Token mới",
+    summary="Refresh access token using a valid refresh token",
     responses={
-        200: {"description": "Làm mới token thành công"},
-        401: {"description": "Refresh token không hợp lệ hoặc đã hết hạn"},
-        403: {"description": "Tài khoản đã bị vô hiệu hóa"},
+        401: {"description": "Invalid or expired refresh token"},
+        403: {"description": "Inactive user account"},
     },
 )
 async def refresh_token(
@@ -66,4 +63,4 @@ async def refresh_token(
     db: DbSession,
     service: AuthServiceDep,
 ) -> TokenResponse:
-    return await service.refresh_tokens(db=db, payload=payload)
+    return await service.refresh_tokens(db, payload)

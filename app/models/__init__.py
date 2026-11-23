@@ -1,4 +1,3 @@
-from app.core.database import Base
 from app.models.enums import (
     ProjectStatus,
     TaskPriority,
@@ -18,7 +17,6 @@ from app.models.models import (
 )
 
 __all__ = [
-    "Base",
     "Comment",
     "Label",
     "Project",

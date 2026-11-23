@@ -1,72 +1,78 @@
 from fastapi import APIRouter, status
 
-from app.core.dependencies import DbSession, TaskServiceDep
+from app.core.dependencies import (
+    CurrentActiveUserDep,
+    DbSession,
+    TaskServiceDep,
+)
 from app.core.pagination import PaginationDep
-from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
+from app.schemas.base import PaginatedResponse
+from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 router = APIRouter()
 
 
 @router.get(
     "",
-    response_model=TaskListResponse,
-    summary="Lấy danh sách tasks",
-    responses={200: {"description": "Danh sách tasks kèm phân trang"}},
+    response_model=PaginatedResponse[TaskResponse],
+    summary="List tasks with pagination",
 )
 async def list_tasks(
     pagination: PaginationDep,
     db: DbSession,
     service: TaskServiceDep,
-) -> TaskListResponse:
-    return await service.list_tasks(db=db, pagination=pagination)
+    current_user: CurrentActiveUserDep,
+) -> PaginatedResponse[TaskResponse]:
+    return await service.list_tasks(db, pagination=pagination)
 
 
 @router.post(
     "",
     response_model=TaskResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Tạo mới task",
+    summary="Create a new task",
     responses={
-        201: {"description": "Task được tạo thành công"},
-        409: {"description": "Khóa ngoại không hợp lệ"},
-        422: {"description": "Dữ liệu validation không hợp lệ"},
+        401: {"description": "Not authenticated"},
+        409: {"description": "Foreign key or integrity constraint violation"},
     },
 )
 async def create_task(
     payload: TaskCreate,
     db: DbSession,
     service: TaskServiceDep,
+    current_user: CurrentActiveUserDep,
 ) -> TaskResponse:
-    return await service.create_task(db=db, payload=payload)
+    task = await service.create_task(db, payload=payload, created_by=current_user.id)
+    return TaskResponse.model_validate(task)
 
 
 @router.get(
     "/{task_id}",
     response_model=TaskResponse,
-    summary="Lấy thông tin chi tiết task",
+    summary="Get task details by ID",
     responses={
-        200: {"description": "Thông tin task"},
-        404: {"description": "Không tìm thấy task"},
+        401: {"description": "Not authenticated"},
+        404: {"description": "Task not found"},
     },
 )
 async def get_task(
     task_id: int,
     db: DbSession,
     service: TaskServiceDep,
+    current_user: CurrentActiveUserDep,
 ) -> TaskResponse:
-    task = await service.get_task_or_404(db=db, task_id=task_id)
+    task = await service.get_task_or_404(db, task_id)
     return TaskResponse.model_validate(task)
 
 
 @router.patch(
     "/{task_id}",
     response_model=TaskResponse,
-    summary="Cập nhật từng phần task",
+    summary="Partially update a task",
     responses={
-        200: {"description": "Cập nhật task thành công"},
-        404: {"description": "Không tìm thấy task"},
-        409: {"description": "Khóa ngoại không hợp lệ"},
-        422: {"description": "Dữ liệu cập nhật không hợp lệ hoặc truyền null"},
+        401: {"description": "Not authenticated"},
+        404: {"description": "Task not found"},
+        409: {"description": "Foreign key or integrity constraint violation"},
     },
 )
 async def patch_task(
@@ -74,22 +80,25 @@ async def patch_task(
     payload: TaskUpdate,
     db: DbSession,
     service: TaskServiceDep,
+    current_user: CurrentActiveUserDep,
 ) -> TaskResponse:
-    return await service.patch_task(db=db, task_id=task_id, payload=payload)
+    task = await service.patch_task(db, task_id, payload)
+    return TaskResponse.model_validate(task)
 
 
 @router.delete(
     "/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Xoá task",
+    summary="Delete a task",
     responses={
-        204: {"description": "Đã xoá thành công"},
-        404: {"description": "Không tìm thấy task"},
+        401: {"description": "Not authenticated"},
+        404: {"description": "Task not found"},
     },
 )
 async def delete_task(
     task_id: int,
     db: DbSession,
     service: TaskServiceDep,
+    current_user: CurrentActiveUserDep,
 ) -> None:
-    await service.delete_task(db=db, task_id=task_id)
+    await service.delete_task(db, task_id)

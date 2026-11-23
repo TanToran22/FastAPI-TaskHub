@@ -1,3 +1,6 @@
+import logging
+
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,60 +10,77 @@ from app.core.exceptions import (
     ForbiddenException,
     UnauthorizedException,
 )
+from app.models.enums import UserRole
+from app.models.models import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import (
     TokenRefreshRequest,
     TokenResponse,
     UserLogin,
     UserRegister,
-    UserResponse,
 )
+
+logger = logging.getLogger("taskhub")
 
 
 class AuthService:
     def __init__(self, user_repository: UserRepository) -> None:
         self.user_repository = user_repository
 
-    async def register(
+    async def register_user(
         self,
         db: AsyncSession,
         payload: UserRegister,
-    ) -> UserResponse:
+    ) -> User:
         normalized_email = payload.email.lower()
-        existing = await self.user_repository.get_by_email(db, normalized_email)
-        if existing:
-            raise ConflictException(messages.MSG_EMAIL_ALREADY_REGISTERED)
+        existing_user = await self.user_repository.get_by_email(
+            db, email=normalized_email
+        )
+        if existing_user:
+            raise ConflictException(messages.MSG_EMAIL_ALREADY_EXISTS)
 
-        user_data = {
+        hashed_password = await run_in_threadpool(
+            security.get_password_hash, payload.password
+        )
+        create_data = {
             "email": normalized_email,
             "full_name": payload.full_name,
-            "hashed_password": security.get_password_hash(payload.password),
+            "hashed_password": hashed_password,
+            "role": UserRole.MEMBER,
+            "is_active": True,
         }
         try:
-            user = await self.user_repository.create(db, obj_in=user_data)
-            await db.commit()
-            return UserResponse.model_validate(user)
+            return await self.user_repository.create(db, obj_in=create_data)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictException(messages.MSG_EMAIL_ALREADY_REGISTERED) from exc
+            logger.warning(
+                "IntegrityError during user registration: %s",
+                exc.orig,
+            )
+            raise ConflictException(messages.MSG_EMAIL_ALREADY_EXISTS) from exc
 
-    async def login(
+    async def authenticate_user(
         self,
         db: AsyncSession,
         payload: UserLogin,
     ) -> TokenResponse:
-        user = await self.user_repository.get_by_email(db, payload.email)
-        if not user or not security.verify_password(
-            payload.password, user.hashed_password
-        ):
+        user = await self.user_repository.get_by_email(db, email=payload.email.lower())
+        target_hash = user.hashed_password if user else security.DUMMY_PASSWORD_HASH
+        is_password_valid = await run_in_threadpool(
+            security.verify_password, payload.password, target_hash
+        )
+
+        if not user or not is_password_valid:
             raise UnauthorizedException(messages.MSG_INVALID_CREDENTIALS)
 
         if not user.is_active:
             raise ForbiddenException(messages.MSG_INACTIVE_USER)
 
+        access_token = security.create_access_token(subject=user.id)
+        refresh_token = security.create_refresh_token(subject=user.id)
         return TokenResponse(
-            access_token=security.create_access_token(user.id),
-            refresh_token=security.create_refresh_token(user.id),
+            access_token=access_token,
+            refresh_token=refresh_token,
         )
 
     async def refresh_tokens(
@@ -68,22 +88,24 @@ class AuthService:
         db: AsyncSession,
         payload: TokenRefreshRequest,
     ) -> TokenResponse:
-        decoded = security.decode_token(payload.refresh_token)
-        if decoded.get("type") != constants.TOKEN_TYPE_REFRESH:
+        token_data = security.decode_token(payload.refresh_token)
+        if token_data.get("type") != constants.TOKEN_TYPE_REFRESH:
             raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN)
 
-        sub = decoded.get("sub")
+        sub = token_data.get("sub")
         if sub is None or not str(sub).isdigit():
             raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN)
 
-        user = await self.user_repository.get_by_id(db, item_id=int(sub))
+        user = await self.user_repository.get_by_id(db, id=int(sub))
         if not user:
             raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN)
 
         if not user.is_active:
             raise ForbiddenException(messages.MSG_INACTIVE_USER)
 
+        access_token = security.create_access_token(subject=user.id)
+        refresh_token = security.create_refresh_token(subject=user.id)
         return TokenResponse(
-            access_token=security.create_access_token(user.id),
-            refresh_token=security.create_refresh_token(user.id),
+            access_token=access_token,
+            refresh_token=refresh_token,
         )

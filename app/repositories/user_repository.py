@@ -11,8 +11,8 @@ class UserRepository(BaseRepository[User, UserRegister, UserUpdate]):
         super().__init__(model=User)
 
     async def get_by_email(self, db: AsyncSession, email: str) -> User | None:
-        stmt = select(User).where(User.email == email.lower())
-        result = await db.execute(stmt)
+        query = select(User).where(User.email == email.lower())
+        result = await db.execute(query)
         return result.scalars().first()
 
     async def update_password(

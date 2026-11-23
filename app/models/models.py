@@ -1,13 +1,15 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -59,11 +61,11 @@ class User(Base):
         nullable=False,
     )
     hashed_password: Mapped[str] = mapped_column(
-        String(constants.USER_PASSWORD_HASH_MAX_LENGTH),
+        String(255),
         nullable=False,
     )
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(UserRole, native_enum=True),
+        SQLEnum(UserRole, name="userrole"),
         default=UserRole.MEMBER,
         server_default=text("'MEMBER'"),
         nullable=False,
@@ -76,6 +78,7 @@ class User(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
     )
@@ -94,11 +97,13 @@ class User(Base):
         "Task",
         back_populates="assignee",
         foreign_keys="Task.assignee_id",
+        passive_deletes=True,
     )
     created_tasks: Mapped[list["Task"]] = relationship(
         "Task",
         back_populates="creator",
         foreign_keys="Task.created_by",
+        passive_deletes=True,
     )
     comments: Mapped[list["Comment"]] = relationship(
         "Comment",
@@ -123,6 +128,7 @@ class Workspace(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
     )
@@ -145,11 +151,9 @@ class Workspace(Base):
 class WorkspaceMember(Base):
     __tablename__ = "workspace_members"
     __table_args__ = (
-        UniqueConstraint(
-            "workspace_id",
-            "user_id",
-            name="uq_workspace_members_workspace_user",
-        ),
+        UniqueConstraint("workspace_id", "user_id"),
+        Index("ix_workspace_members_user_id", "user_id"),
+        Index("ix_workspace_members_workspace_id", "workspace_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -157,16 +161,14 @@ class WorkspaceMember(Base):
         Integer,
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     role: Mapped[WorkspaceRole] = mapped_column(
-        SQLEnum(WorkspaceRole, native_enum=True),
+        SQLEnum(WorkspaceRole, name="workspacerole"),
         default=WorkspaceRole.VIEWER,
         server_default=text("'VIEWER'"),
         nullable=False,
@@ -190,18 +192,16 @@ class Project(Base):
         String(constants.PROJECT_NAME_MAX_LENGTH),
         nullable=False,
     )
-    description: Mapped[str | None] = mapped_column(
-        String(constants.PROJECT_DESCRIPTION_MAX_LENGTH),
-        nullable=True,
-    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ProjectStatus] = mapped_column(
-        SQLEnum(ProjectStatus, native_enum=True),
+        SQLEnum(ProjectStatus, name="projectstatus"),
         default=ProjectStatus.ACTIVE,
         server_default=text("'ACTIVE'"),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
     )
@@ -248,20 +248,23 @@ class Task(Base):
         nullable=True,
     )
     status: Mapped[TaskStatus] = mapped_column(
-        SQLEnum(TaskStatus, native_enum=True),
+        SQLEnum(TaskStatus, name="taskstatus"),
         default=TaskStatus.TODO,
         server_default=text("'TODO'"),
         nullable=False,
+        index=True,
     )
     priority: Mapped[TaskPriority] = mapped_column(
-        SQLEnum(TaskPriority, native_enum=True),
+        SQLEnum(TaskPriority, name="taskpriority"),
         default=TaskPriority.MEDIUM,
         server_default=text("'MEDIUM'"),
         nullable=False,
+        index=True,
     )
     due_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+        index=True,
     )
     created_by: Mapped[int | None] = mapped_column(
         Integer,
@@ -271,8 +274,10 @@ class Task(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
 
     project: Mapped["Project | None"] = relationship("Project", back_populates="tasks")
@@ -302,13 +307,7 @@ class Task(Base):
 
 class Label(Base):
     __tablename__ = "labels"
-    __table_args__ = (
-        UniqueConstraint(
-            "project_id",
-            "name",
-            name="uq_labels_project_name",
-        ),
-    )
+    __table_args__ = (UniqueConstraint("project_id", "name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
@@ -323,8 +322,8 @@ class Label(Base):
     )
     color: Mapped[str] = mapped_column(
         String(constants.LABEL_COLOR_MAX_LENGTH),
-        default=constants.LABEL_DEFAULT_COLOR,
-        server_default=text(f"'{constants.LABEL_DEFAULT_COLOR}'"),
+        default=constants.DEFAULT_LABEL_COLOR,
+        server_default=text(f"'{constants.DEFAULT_LABEL_COLOR}'"),
         nullable=False,
     )
 
@@ -359,6 +358,7 @@ class Comment(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
     )

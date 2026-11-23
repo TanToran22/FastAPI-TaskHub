@@ -3,6 +3,8 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core import constants
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -22,13 +24,19 @@ class Settings(BaseSettings):
     )
     TEST_DATABASE_URL: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/taskhub_test_db",
-        description="Isolated Async PostgreSQL Test Connection URL",
+        description="Async PostgreSQL Connection URL for testing",
     )
 
     SECRET_KEY: str = Field(
-        default="09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7",
-        description="Secret key for signing JWT tokens",
+        ...,
+        min_length=32,
+        description="Secret key for JWT signing (generate with: openssl rand -hex 32)",
     )
+    JWT_ALGORITHM: str = constants.JWT_ALGORITHM
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = constants.ACCESS_TOKEN_EXPIRE_MINUTES
+    REFRESH_TOKEN_EXPIRE_DAYS: int = constants.REFRESH_TOKEN_EXPIRE_DAYS
+
+    REDIS_URL: str = "redis://localhost:6379/0"
 
 
 settings = Settings()

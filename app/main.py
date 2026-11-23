@@ -1,7 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -38,22 +37,13 @@ def create_application() -> FastAPI:
     async def app_exception_handler(
         request: Request, exc: AppException
     ) -> JSONResponse:
-        log_msg = (
-            f"AppException ({exc.status_code}): "
-            f"path={request.url.path} message={exc.message}"
-        )
         if exc.status_code >= 500:
-            logger.error(log_msg)
+            logger.error("AppException %s: %s", exc.status_code, exc.message)
         else:
-            logger.warning(log_msg)
-
-        content: dict[str, Any] = {"detail": exc.message}
-        if exc.details is not None:
-            content["details"] = exc.details
-
+            logger.warning("AppException %s: %s", exc.status_code, exc.message)
         return JSONResponse(
             status_code=exc.status_code,
-            content=content,
+            content={"detail": exc.message},
         )
 
     application.include_router(api_router, prefix=settings.API_V1_STR)

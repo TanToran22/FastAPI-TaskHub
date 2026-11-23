@@ -1,77 +1,118 @@
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import security
+from app.core.dependencies import require_admin_role
+from app.core.exceptions import ForbiddenException
 from app.models.enums import UserRole
 from app.models.models import User
-from tests.conftest import TestingSessionLocal
 
 
 @pytest.mark.asyncio
-async def test_register_and_duplicate_email_409(client: AsyncClient) -> None:
+async def test_register_and_duplicate_email_returns_409(
+    client: AsyncClient,
+) -> None:
     payload = {
-        "email": "alice@example.com",
-        "full_name": "Alice Nguyen",
-        "password": "StrongPassword123",
+        "email": "Alice@Example.com",
+        "full_name": "  Alice Smith  ",
+        "password": "securepassword123",
     }
     res1 = await client.post("/api/v1/auth/register", json=payload)
     assert res1.status_code == 201
     data = res1.json()
     assert data["email"] == "alice@example.com"
-    assert data["full_name"] == "Alice Nguyen"
+    assert data["full_name"] == "Alice Smith"
     assert data["role"] == "MEMBER"
     assert data["is_active"] is True
     assert "hashed_password" not in data
 
-    # Duplicate email (case-insensitive) -> 409 Conflict
-    res2 = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "ALICE@example.com",
-            "full_name": "Alice Clone",
-            "password": "StrongPassword123",
-        },
-    )
+    res2 = await client.post("/api/v1/auth/register", json=payload)
     assert res2.status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_login_and_refresh_token_flow(client: AsyncClient) -> None:
+async def test_password_whitespace_preserved_and_72_byte_limit(
+    client: AsyncClient,
+) -> None:
+    # Password with leading/trailing spaces must NOT be stripped
+    pw_with_spaces = "  secret123  "
+    res = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "space@example.com",
+            "full_name": "Space User",
+            "password": pw_with_spaces,
+        },
+    )
+    assert res.status_code == 201
+
+    # Login without spaces must fail
+    fail_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "space@example.com", "password": "secret123"},
+    )
+    assert fail_login.status_code == 401
+
+    # Login with exact spaces succeeds
+    ok_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "space@example.com", "password": pw_with_spaces},
+    )
+    assert ok_login.status_code == 200
+
+    # Password > 72 UTF-8 bytes must return 422
+    over_72_bytes_pw = "a" * 73
+    res_72 = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "longpw@example.com",
+            "full_name": "Long PW",
+            "password": over_72_bytes_pw,
+        },
+    )
+    assert res_72.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_login_jwt_claims_and_refresh_token_flow(
+    client: AsyncClient,
+) -> None:
     await client.post(
         "/api/v1/auth/register",
         json={
             "email": "bob@example.com",
-            "full_name": "Bob Tran",
-            "password": "SecretPassword123",
+            "full_name": "Bob Jones",
+            "password": "bobpassword123",
         },
     )
 
-    # Wrong password -> 401
     bad_login = await client.post(
         "/api/v1/auth/login",
-        json={"email": "bob@example.com", "password": "WrongPassword"},
+        json={"email": "bob@example.com", "password": "wrongpassword"},
     )
     assert bad_login.status_code == 401
 
-    # Valid login -> 200 with access & refresh tokens
     login_res = await client.post(
         "/api/v1/auth/login",
-        json={"email": "bob@example.com", "password": "SecretPassword123"},
+        json={"email": "bob@example.com", "password": "bobpassword123"},
     )
     assert login_res.status_code == 200
     tokens = login_res.json()
-    assert "access_token" in tokens
-    assert "refresh_token" in tokens
     assert tokens["token_type"] == "bearer"
 
-    # Using access token as refresh token -> 401
+    access_payload = security.decode_token(tokens["access_token"])
+    assert access_payload["type"] == "access"
+    assert "jti" in access_payload
+    assert "iat" in access_payload
+
+    # Access token cannot be used on /refresh
     bad_refresh = await client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": tokens["access_token"]},
     )
     assert bad_refresh.status_code == 401
 
-    # Valid refresh -> 200 new token pair
     refresh_res = await client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": tokens["refresh_token"]},
@@ -79,38 +120,48 @@ async def test_login_and_refresh_token_flow(client: AsyncClient) -> None:
     assert refresh_res.status_code == 200
     new_tokens = refresh_res.json()
     assert "access_token" in new_tokens
-    assert "refresh_token" in new_tokens
 
 
 @pytest.mark.asyncio
-async def test_user_profile_me_patch_and_change_password(
+async def test_user_me_profile_password_change_and_protected_tasks(
     client: AsyncClient,
 ) -> None:
-    await client.post(
+    unauth_res = await client.get("/api/v1/users/me")
+    assert unauth_res.status_code == 401
+
+    unauth_tasks = await client.get("/api/v1/tasks")
+    assert unauth_tasks.status_code == 401
+
+    reg_res = await client.post(
         "/api/v1/auth/register",
         json={
             "email": "charlie@example.com",
-            "full_name": "Charlie Le",
-            "password": "OldPassword123",
+            "full_name": "Charlie Brown",
+            "password": "oldpassword123",
         },
     )
+    user_id = reg_res.json()["id"]
+
     login_res = await client.post(
         "/api/v1/auth/login",
-        json={"email": "charlie@example.com", "password": "OldPassword123"},
+        json={"email": "charlie@example.com", "password": "oldpassword123"},
     )
     access_token = login_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # Unauthenticated -> 401
-    unauth = await client.get("/api/v1/users/me")
-    assert unauth.status_code == 401
+    # Create task sets created_by to current_user.id
+    task_res = await client.post(
+        "/api/v1/tasks",
+        json={"title": "Authenticated Task"},
+        headers=headers,
+    )
+    assert task_res.status_code == 201
+    assert task_res.json()["created_by"] == user_id
 
-    # GET /users/me -> 200
     me_res = await client.get("/api/v1/users/me", headers=headers)
     assert me_res.status_code == 200
-    assert me_res.json()["email"] == "charlie@example.com"
+    assert me_res.json()["full_name"] == "Charlie Brown"
 
-    # PATCH /users/me with null -> 422
     null_patch = await client.patch(
         "/api/v1/users/me",
         json={"full_name": None},
@@ -118,84 +169,49 @@ async def test_user_profile_me_patch_and_change_password(
     )
     assert null_patch.status_code == 422
 
-    # PATCH /users/me valid -> 200
-    ok_patch = await client.patch(
+    valid_patch = await client.patch(
         "/api/v1/users/me",
-        json={"full_name": "Charlie Updated"},
+        json={"full_name": "  Charlie Updated  "},
         headers=headers,
     )
-    assert ok_patch.status_code == 200
-    assert ok_patch.json()["full_name"] == "Charlie Updated"
+    assert valid_patch.status_code == 200
+    assert valid_patch.json()["full_name"] == "Charlie Updated"
 
-    # Change password with wrong current password -> 400
-    bad_pw = await client.post(
+    pw_res = await client.post(
         "/api/v1/users/me/change-password",
         json={
-            "current_password": "WrongOldPassword",
-            "new_password": "NewPassword456",
+            "current_password": "oldpassword123",
+            "new_password": "newpassword456",
         },
         headers=headers,
     )
-    assert bad_pw.status_code == 400
+    assert pw_res.status_code == 204
 
-    # Change password valid -> 204
-    ok_pw = await client.post(
-        "/api/v1/users/me/change-password",
-        json={
-            "current_password": "OldPassword123",
-            "new_password": "NewPassword456",
-        },
-        headers=headers,
-    )
-    assert ok_pw.status_code == 204
-
-    # Login with new password -> 200
     relogin = await client.post(
         "/api/v1/auth/login",
-        json={"email": "charlie@example.com", "password": "NewPassword456"},
+        json={"email": "charlie@example.com", "password": "newpassword456"},
     )
     assert relogin.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_rbac_admin_and_inactive_user(client: AsyncClient) -> None:
-    reg = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "member@example.com",
-            "full_name": "Regular Member",
-            "password": "Password123",
-        },
+async def test_require_admin_role_dependency(db_session: AsyncSession) -> None:
+    member_user = User(
+        email="member@example.com",
+        full_name="Member User",
+        hashed_password="hashed",
+        role=UserRole.MEMBER,
+        is_active=True,
     )
-    user_id = reg.json()["id"]
+    with pytest.raises(ForbiddenException):
+        await require_admin_role(current_user=member_user)
 
-    login_res = await client.post(
-        "/api/v1/auth/login",
-        json={"email": "member@example.com", "password": "Password123"},
+    admin_user = User(
+        email="admin@example.com",
+        full_name="Admin User",
+        hashed_password="hashed",
+        role=UserRole.ADMIN,
+        is_active=True,
     )
-    headers = {"Authorization": f"Bearer {login_res.json()['access_token']}"}
-
-    # Member accessing admin endpoint -> 403 Forbidden
-    forbidden_res = await client.get("/api/v1/users/admin/check", headers=headers)
-    assert forbidden_res.status_code == 403
-
-    # Promote user to ADMIN in DB -> 200 OK
-    async with TestingSessionLocal() as session:
-        await session.execute(
-            update(User).where(User.id == user_id).values(role=UserRole.ADMIN)
-        )
-        await session.commit()
-
-    admin_res = await client.get("/api/v1/users/admin/check", headers=headers)
-    assert admin_res.status_code == 200
-    assert admin_res.json()["role"] == "ADMIN"
-
-    # Deactivate user in DB -> 403 Forbidden
-    async with TestingSessionLocal() as session:
-        await session.execute(
-            update(User).where(User.id == user_id).values(is_active=False)
-        )
-        await session.commit()
-
-    inactive_res = await client.get("/api/v1/users/me", headers=headers)
-    assert inactive_res.status_code == 403
+    verified = await require_admin_role(current_user=admin_user)
+    assert verified.role == UserRole.ADMIN

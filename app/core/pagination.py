@@ -8,7 +8,7 @@ from app.core import constants
 SkipQuery = Annotated[
     int,
     Query(
-        ge=constants.MIN_PAGINATION_SKIP,
+        ge=0,
         description="Number of records to skip",
     ),
 ]

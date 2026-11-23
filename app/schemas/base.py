@@ -12,15 +12,17 @@ class CoreBaseSchema(BaseModel):
     )
 
 
-class PaginatedResponse(CoreBaseSchema, Generic[T]):
+class NoStripBaseSchema(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=False,
+        from_attributes=True,
+    )
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
     items: list[T]
     total: int
     skip: int
     limit: int
 
-
-class HealthResponse(CoreBaseSchema):
-    status: str
-    database: str
-    app_name: str
-    environment: str
+    model_config = ConfigDict(from_attributes=True)

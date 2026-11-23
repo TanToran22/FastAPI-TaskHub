@@ -1,0 +1,295 @@
+"""create_initial_taskhub_tables
+
+Revision ID: 0001_initial
+Revises:
+Create Date: 2026-03-30 00:00:00.000000
+
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+from alembic import op
+
+revision: str = "0001_initial"
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "users",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("email", sa.String(length=255), nullable=False),
+        sa.Column("full_name", sa.String(length=255), nullable=False),
+        sa.Column("hashed_password", sa.String(length=255), nullable=False),
+        sa.Column(
+            "role",
+            sa.Enum("ADMIN", "MEMBER", name="userrole"),
+            server_default=sa.text("'MEMBER'"),
+            nullable=False,
+        ),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("true"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
+    )
+    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+
+    op.create_table(
+        "workspaces",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("owner_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["owner_id"],
+            ["users.id"],
+            name=op.f("fk_workspaces_owner_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_workspaces")),
+    )
+    op.create_index(
+        op.f("ix_workspaces_owner_id"), "workspaces", ["owner_id"], unique=False
+    )
+
+    op.create_table(
+        "workspace_members",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("workspace_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "role",
+            sa.Enum("OWNER", "EDITOR", "VIEWER", name="workspacerole"),
+            server_default=sa.text("'VIEWER'"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_workspace_members_user_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id"],
+            ["workspaces.id"],
+            name=op.f("fk_workspace_members_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_members")),
+        sa.UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            name=op.f("uq_workspace_members_workspace_id"),
+        ),
+    )
+    op.create_index(
+        "ix_workspace_members_user_id", "workspace_members", ["user_id"], unique=False
+    )
+    op.create_index(
+        "ix_workspace_members_workspace_id",
+        "workspace_members",
+        ["workspace_id"],
+        unique=False,
+    )
+
+    op.create_table(
+        "projects",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("workspace_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column(
+            "status",
+            sa.Enum("ACTIVE", "ARCHIVED", name="projectstatus"),
+            server_default=sa.text("'ACTIVE'"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id"],
+            ["workspaces.id"],
+            name=op.f("fk_projects_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_projects")),
+    )
+    op.create_index(
+        op.f("ix_projects_workspace_id"), "projects", ["workspace_id"], unique=False
+    )
+
+    op.create_table(
+        "tasks",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("project_id", sa.Integer(), nullable=True),
+        sa.Column("assignee_id", sa.Integer(), nullable=True),
+        sa.Column("title", sa.String(length=200), nullable=False),
+        sa.Column("description", sa.String(length=2000), nullable=True),
+        sa.Column(
+            "status",
+            sa.Enum("TODO", "IN_PROGRESS", "IN_REVIEW", "DONE", name="taskstatus"),
+            server_default=sa.text("'TODO'"),
+            nullable=False,
+        ),
+        sa.Column(
+            "priority",
+            sa.Enum("LOW", "MEDIUM", "HIGH", "URGENT", name="taskpriority"),
+            server_default=sa.text("'MEDIUM'"),
+            nullable=False,
+        ),
+        sa.Column("due_date", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_by", sa.Integer(), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["assignee_id"],
+            ["users.id"],
+            name=op.f("fk_tasks_assignee_id_users"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["created_by"],
+            ["users.id"],
+            name=op.f("fk_tasks_created_by_users"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["project_id"],
+            ["projects.id"],
+            name=op.f("fk_tasks_project_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_tasks")),
+    )
+    op.create_index(op.f("ix_tasks_project_id"), "tasks", ["project_id"], unique=False)
+    op.create_index(
+        op.f("ix_tasks_assignee_id"), "tasks", ["assignee_id"], unique=False
+    )
+    op.create_index(op.f("ix_tasks_created_by"), "tasks", ["created_by"], unique=False)
+    op.create_index(op.f("ix_tasks_status"), "tasks", ["status"], unique=False)
+    op.create_index(op.f("ix_tasks_priority"), "tasks", ["priority"], unique=False)
+    op.create_index(op.f("ix_tasks_created_at"), "tasks", ["created_at"], unique=False)
+    op.create_index(op.f("ix_tasks_due_date"), "tasks", ["due_date"], unique=False)
+
+    op.create_table(
+        "labels",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=100), nullable=False),
+        sa.Column(
+            "color",
+            sa.String(length=50),
+            server_default=sa.text("'#3B82F6'"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["project_id"],
+            ["projects.id"],
+            name=op.f("fk_labels_project_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_labels")),
+        sa.UniqueConstraint("project_id", "name", name=op.f("uq_labels_project_id")),
+    )
+    op.create_index(
+        op.f("ix_labels_project_id"), "labels", ["project_id"], unique=False
+    )
+
+    op.create_table(
+        "task_labels",
+        sa.Column("task_id", sa.Integer(), nullable=False),
+        sa.Column("label_id", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["label_id"],
+            ["labels.id"],
+            name=op.f("fk_task_labels_label_id_labels"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["task_id"],
+            ["tasks.id"],
+            name=op.f("fk_task_labels_task_id_tasks"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("task_id", "label_id", name=op.f("pk_task_labels")),
+    )
+    op.create_index(
+        op.f("ix_task_labels_label_id"), "task_labels", ["label_id"], unique=False
+    )
+
+    op.create_table(
+        "comments",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("task_id", sa.Integer(), nullable=False),
+        sa.Column("author_id", sa.Integer(), nullable=False),
+        sa.Column("content", sa.String(length=5000), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["author_id"],
+            ["users.id"],
+            name=op.f("fk_comments_author_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["task_id"],
+            ["tasks.id"],
+            name=op.f("fk_comments_task_id_tasks"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_comments")),
+    )
+    op.create_index(op.f("ix_comments_task_id"), "comments", ["task_id"], unique=False)
+    op.create_index(
+        op.f("ix_comments_author_id"), "comments", ["author_id"], unique=False
+    )
+
+
+def downgrade() -> None:
+    op.drop_table("comments")
+    op.drop_table("task_labels")
+    op.drop_table("labels")
+    op.drop_table("tasks")
+    op.drop_table("projects")
+    op.drop_table("workspace_members")
+    op.drop_table("workspaces")
+    op.drop_table("users")
+
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        postgresql.ENUM(name="taskpriority").drop(bind, checkfirst=True)
+        postgresql.ENUM(name="taskstatus").drop(bind, checkfirst=True)
+        postgresql.ENUM(name="projectstatus").drop(bind, checkfirst=True)
+        postgresql.ENUM(name="workspacerole").drop(bind, checkfirst=True)
+        postgresql.ENUM(name="userrole").drop(bind, checkfirst=True)
