@@ -1,17 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, Path, status
 
 from app.core.dependencies import (
     CurrentActiveUserDep,
     DbSession,
-    ProjectServiceDep,
     WorkspaceServiceDep,
 )
 from app.core.pagination import PaginationDep
-from app.models.enums import ProjectStatus
 from app.schemas.base import PaginatedResponse
-from app.schemas.project import ProjectCreate, ProjectResponse
 from app.schemas.workspace import (
     WorkspaceCreate,
     WorkspaceMemberInvite,
@@ -25,10 +22,6 @@ router = APIRouter()
 
 WorkspaceIdPath = Annotated[int, Path(gt=0, description="Workspace ID")]
 UserIdPath = Annotated[int, Path(gt=0, description="Target User ID")]
-ProjectStatusQuery = Annotated[
-    ProjectStatus | None,
-    Query(description="Optional filter by project status (ACTIVE/ARCHIVED)"),
-]
 
 
 @router.post(
@@ -205,50 +198,3 @@ async def remove_workspace_member(
     service: WorkspaceServiceDep,
 ) -> None:
     await service.remove_member(db, workspace_id, user_id, current_user)
-
-
-@router.post(
-    "/{workspace_id}/projects",
-    response_model=ProjectResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a project inside a workspace (OWNER or EDITOR)",
-    responses={
-        403: {"description": "Requires OWNER or EDITOR role"},
-        404: {"description": "Workspace not found"},
-    },
-)
-async def create_workspace_project(
-    workspace_id: WorkspaceIdPath,
-    payload: ProjectCreate,
-    db: DbSession,
-    current_user: CurrentActiveUserDep,
-    service: ProjectServiceDep,
-) -> ProjectResponse:
-    project = await service.create_project(db, workspace_id, current_user, payload)
-    return ProjectResponse.model_validate(project)
-
-
-@router.get(
-    "/{workspace_id}/projects",
-    response_model=PaginatedResponse[ProjectResponse],
-    summary="List projects in a workspace with optional status filter",
-    responses={
-        403: {"description": "Not a member of this workspace"},
-        404: {"description": "Workspace not found"},
-    },
-)
-async def list_workspace_projects(
-    workspace_id: WorkspaceIdPath,
-    pagination: PaginationDep,
-    db: DbSession,
-    current_user: CurrentActiveUserDep,
-    service: ProjectServiceDep,
-    status_filter: ProjectStatusQuery = None,
-) -> PaginatedResponse[ProjectResponse]:
-    return await service.list_projects(
-        db,
-        workspace_id=workspace_id,
-        current_user=current_user,
-        status=status_filter,
-        pagination=pagination,
-    )

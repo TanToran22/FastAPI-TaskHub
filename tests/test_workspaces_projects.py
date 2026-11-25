@@ -1,5 +1,9 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.models import WorkspaceMember
 
 
 async def _register_and_login(
@@ -36,7 +40,6 @@ async def test_workspace_crud_and_owner_membership(
         client, "outsider@example.com", "Outsider User"
     )
 
-    # Create workspace
     create_res = await client.post(
         "/api/v1/workspaces",
         json={"name": "  Engineering Team  "},
@@ -48,7 +51,6 @@ async def test_workspace_crud_and_owner_membership(
     assert ws["owner_id"] == owner_id
     ws_id = ws["id"]
 
-    # Creator is listed as OWNER member automatically
     members_res = await client.get(
         f"/api/v1/workspaces/{ws_id}/members", headers=owner_headers
     )
@@ -58,7 +60,6 @@ async def test_workspace_crud_and_owner_membership(
     assert members_data["items"][0]["user_id"] == owner_id
     assert members_data["items"][0]["role"] == "OWNER"
 
-    # Outsider cannot see workspace in list or get by id
     outsider_list = await client.get("/api/v1/workspaces", headers=outsider_headers)
     assert outsider_list.status_code == 200
     assert outsider_list.json()["total"] == 0
@@ -68,7 +69,6 @@ async def test_workspace_crud_and_owner_membership(
     )
     assert outsider_get.status_code == 403
 
-    # PATCH null name returns 422
     null_patch = await client.patch(
         f"/api/v1/workspaces/{ws_id}",
         json={"name": None},
@@ -76,7 +76,6 @@ async def test_workspace_crud_and_owner_membership(
     )
     assert null_patch.status_code == 422
 
-    # Valid update by OWNER
     upd_res = await client.patch(
         f"/api/v1/workspaces/{ws_id}",
         json={"name": "Core Platform"},
@@ -85,7 +84,6 @@ async def test_workspace_crud_and_owner_membership(
     assert upd_res.status_code == 200
     assert upd_res.json()["name"] == "Core Platform"
 
-    # Outsider cannot delete; OWNER can delete
     assert (
         await client.delete(f"/api/v1/workspaces/{ws_id}", headers=outsider_headers)
     ).status_code == 403
@@ -93,6 +91,72 @@ async def test_workspace_crud_and_owner_membership(
     assert (
         await client.delete(f"/api/v1/workspaces/{ws_id}", headers=owner_headers)
     ).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_cascades_projects_and_members(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    _, owner_headers = await _register_and_login(
+        client, "cascade_owner@example.com", "Cascade Owner"
+    )
+    _, member_headers = await _register_and_login(
+        client, "cascade_member@example.com", "Cascade Member"
+    )
+
+    ws_res = await client.post(
+        "/api/v1/workspaces",
+        json={"name": "Cascade Workspace"},
+        headers=owner_headers,
+    )
+    assert ws_res.status_code == 201
+    ws_id = ws_res.json()["id"]
+
+    inv_res = await client.post(
+        f"/api/v1/workspaces/{ws_id}/members",
+        json={"email": "cascade_member@example.com", "role": "EDITOR"},
+        headers=owner_headers,
+    )
+    assert inv_res.status_code == 201
+
+    proj_res = await client.post(
+        f"/api/v1/workspaces/{ws_id}/projects",
+        json={"name": "Cascade Project"},
+        headers=member_headers,
+    )
+    assert proj_res.status_code == 201
+    proj_id = proj_res.json()["id"]
+
+    # Confirm 2 members exist before deletion
+    before_count = (
+        await db_session.execute(
+            select(func.count(WorkspaceMember.id)).where(
+                WorkspaceMember.workspace_id == ws_id
+            )
+        )
+    ).scalar_one()
+    assert before_count == 2
+
+    # Delete non-empty workspace
+    del_res = await client.delete(f"/api/v1/workspaces/{ws_id}", headers=owner_headers)
+    assert del_res.status_code == 204
+
+    # Project must be cascade-deleted (404)
+    assert (
+        await client.get(f"/api/v1/projects/{proj_id}", headers=owner_headers)
+    ).status_code == 404
+
+    # Workspace members must be cascade-deleted (0 rows remaining)
+    db_session.expire_all()
+    after_count = (
+        await db_session.execute(
+            select(func.count(WorkspaceMember.id)).where(
+                WorkspaceMember.workspace_id == ws_id
+            )
+        )
+    ).scalar_one()
+    assert after_count == 0
 
 
 @pytest.mark.asyncio
@@ -117,7 +181,6 @@ async def test_workspace_member_invite_role_limits_and_rbac(
         )
     ).json()["id"]
 
-    # Inviting with role=OWNER must be rejected with 422
     owner_invite = await client.post(
         f"/api/v1/workspaces/{ws_id}/members",
         json={"email": "wseditor@example.com", "role": "OWNER"},
@@ -125,7 +188,6 @@ async def test_workspace_member_invite_role_limits_and_rbac(
     )
     assert owner_invite.status_code == 422
 
-    # Invite EDITOR succeeds
     inv_editor = await client.post(
         f"/api/v1/workspaces/{ws_id}/members",
         json={"email": "wseditor@example.com", "role": "EDITOR"},
@@ -134,7 +196,6 @@ async def test_workspace_member_invite_role_limits_and_rbac(
     assert inv_editor.status_code == 201
     assert inv_editor.json()["role"] == "EDITOR"
 
-    # Duplicate invite returns 409 Conflict
     dup_invite = await client.post(
         f"/api/v1/workspaces/{ws_id}/members",
         json={"email": "wseditor@example.com", "role": "VIEWER"},
@@ -142,7 +203,6 @@ async def test_workspace_member_invite_role_limits_and_rbac(
     )
     assert dup_invite.status_code == 409
 
-    # EDITOR cannot invite others (OWNER only)
     editor_invite = await client.post(
         f"/api/v1/workspaces/{ws_id}/members",
         json={"email": "wsviewer@example.com", "role": "VIEWER"},
@@ -150,7 +210,6 @@ async def test_workspace_member_invite_role_limits_and_rbac(
     )
     assert editor_invite.status_code == 403
 
-    # OWNER invites VIEWER
     inv_viewer = await client.post(
         f"/api/v1/workspaces/{ws_id}/members",
         json={"email": "wsviewer@example.com", "role": "VIEWER"},
@@ -158,14 +217,12 @@ async def test_workspace_member_invite_role_limits_and_rbac(
     )
     assert inv_viewer.status_code == 201
 
-    # OWNER cannot remove themselves (400)
     self_remove = await client.delete(
         f"/api/v1/workspaces/{ws_id}/members/{owner_id}",
         headers=owner_headers,
     )
     assert self_remove.status_code == 400
 
-    # OWNER updates VIEWER role to EDITOR
     role_upd = await client.patch(
         f"/api/v1/workspaces/{ws_id}/members/{viewer_id}",
         json={"role": "EDITOR"},
@@ -174,14 +231,12 @@ async def test_workspace_member_invite_role_limits_and_rbac(
     assert role_upd.status_code == 200
     assert role_upd.json()["role"] == "EDITOR"
 
-    # OWNER removes member
     rem_res = await client.delete(
         f"/api/v1/workspaces/{ws_id}/members/{editor_id}",
         headers=owner_headers,
     )
     assert rem_res.status_code == 204
 
-    # Removed member loses access immediately
     assert (
         await client.get(f"/api/v1/workspaces/{ws_id}", headers=editor_headers)
     ).status_code == 403
@@ -220,7 +275,6 @@ async def test_project_crud_archive_filter_and_rbac(
         headers=owner_headers,
     )
 
-    # VIEWER cannot create project (403)
     viewer_create = await client.post(
         f"/api/v1/workspaces/{ws_id}/projects",
         json={"name": "Blocked Project"},
@@ -228,7 +282,6 @@ async def test_project_crud_archive_filter_and_rbac(
     )
     assert viewer_create.status_code == 403
 
-    # EDITOR can create project (201)
     p1_res = await client.post(
         f"/api/v1/workspaces/{ws_id}/projects",
         json={"name": "Backend API", "description": "Core API"},
@@ -240,7 +293,6 @@ async def test_project_crud_archive_filter_and_rbac(
     assert p1["status"] == "ACTIVE"
     p1_id = p1["id"]
 
-    # OWNER creates second project
     p2_res = await client.post(
         f"/api/v1/workspaces/{ws_id}/projects",
         json={"name": "Legacy Migration"},
@@ -249,12 +301,10 @@ async def test_project_crud_archive_filter_and_rbac(
     assert p2_res.status_code == 201
     p2_id = p2_res.json()["id"]
 
-    # VIEWER can read project details and list projects
     assert (
         await client.get(f"/api/v1/projects/{p1_id}", headers=viewer_headers)
     ).status_code == 200
 
-    # VIEWER cannot update or archive project
     assert (
         await client.patch(
             f"/api/v1/projects/{p1_id}",
@@ -266,7 +316,7 @@ async def test_project_crud_archive_filter_and_rbac(
         await client.post(f"/api/v1/projects/{p1_id}/archive", headers=viewer_headers)
     ).status_code == 403
 
-    # PATCH null name/status returns 422
+    # PATCH null name returns 422
     assert (
         await client.patch(
             f"/api/v1/projects/{p1_id}",
@@ -274,22 +324,24 @@ async def test_project_crud_archive_filter_and_rbac(
             headers=editor_headers,
         )
     ).status_code == 422
-    assert (
-        await client.patch(
-            f"/api/v1/projects/{p1_id}",
-            json={"status": None},
-            headers=editor_headers,
-        )
-    ).status_code == 422
 
-    # EDITOR archives project 2
+    # EDITOR archives project 2 via dedicated /archive endpoint
     arch_res = await client.post(
         f"/api/v1/projects/{p2_id}/archive", headers=editor_headers
     )
     assert arch_res.status_code == 200
     assert arch_res.json()["status"] == "ARCHIVED"
 
-    # Filter projects by status ACTIVE vs ARCHIVED
+    # PATCH cannot modify status or reopen archived project
+    reopen_attempt = await client.patch(
+        f"/api/v1/projects/{p2_id}",
+        json={"name": "Legacy Renamed", "status": "ACTIVE"},
+        headers=editor_headers,
+    )
+    assert reopen_attempt.status_code == 200
+    assert reopen_attempt.json()["name"] == "Legacy Renamed"
+    assert reopen_attempt.json()["status"] == "ARCHIVED"
+
     active_list = await client.get(
         f"/api/v1/workspaces/{ws_id}/projects?status_filter=ACTIVE",
         headers=viewer_headers,
@@ -306,12 +358,10 @@ async def test_project_crud_archive_filter_and_rbac(
     assert archived_list.json()["total"] == 1
     assert archived_list.json()["items"][0]["id"] == p2_id
 
-    # EDITOR cannot delete project (OWNER only)
     assert (
         await client.delete(f"/api/v1/projects/{p1_id}", headers=editor_headers)
     ).status_code == 403
 
-    # OWNER deletes project (204)
     assert (
         await client.delete(f"/api/v1/projects/{p1_id}", headers=owner_headers)
     ).status_code == 204

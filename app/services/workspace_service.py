@@ -44,6 +44,46 @@ class WorkspaceService:
         self.member_repo = member_repo
         self.user_repo = user_repo
 
+    async def _get_workspace_for_role(
+        self,
+        db: AsyncSession,
+        workspace_id: int,
+        current_user: User,
+        allowed_roles: frozenset[WorkspaceRole],
+    ) -> Workspace:
+        workspace, _ = await verify_workspace_role(
+            db,
+            self.workspace_repo,
+            self.member_repo,
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+            allowed_roles=allowed_roles,
+        )
+        return workspace
+
+    async def _get_member_for_owner_action(
+        self,
+        db: AsyncSession,
+        workspace_id: int,
+        target_user_id: int,
+        current_user: User,
+        owner_error_msg: str,
+    ) -> WorkspaceMember:
+        await self._get_workspace_for_role(
+            db,
+            workspace_id=workspace_id,
+            current_user=current_user,
+            allowed_roles=WORKSPACE_OWNER_ROLES,
+        )
+        member = await self.member_repo.get_by_workspace_and_user(
+            db, workspace_id=workspace_id, user_id=target_user_id
+        )
+        if not member:
+            raise NotFoundException(messages.MSG_WORKSPACE_MEMBER_NOT_FOUND)
+        if member.role == WorkspaceRole.OWNER:
+            raise BadRequestException(owner_error_msg)
+        return member
+
     async def create_workspace(
         self,
         db: AsyncSession,
@@ -88,15 +128,12 @@ class WorkspaceService:
         workspace_id: int,
         current_user: User,
     ) -> Workspace:
-        workspace, _ = await verify_workspace_role(
+        return await self._get_workspace_for_role(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=ALL_WORKSPACE_ROLES,
         )
-        return workspace
 
     async def update_workspace(
         self,
@@ -105,12 +142,10 @@ class WorkspaceService:
         current_user: User,
         payload: WorkspaceUpdate,
     ) -> Workspace:
-        workspace, _ = await verify_workspace_role(
+        workspace = await self._get_workspace_for_role(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=WORKSPACE_OWNER_ROLES,
         )
         return await self.workspace_repo.update(db, db_obj=workspace, obj_in=payload)
@@ -121,12 +156,10 @@ class WorkspaceService:
         workspace_id: int,
         current_user: User,
     ) -> None:
-        workspace, _ = await verify_workspace_role(
+        workspace = await self._get_workspace_for_role(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=WORKSPACE_OWNER_ROLES,
         )
         await self.workspace_repo.delete(db, id=workspace.id)
@@ -138,12 +171,10 @@ class WorkspaceService:
         current_user: User,
         pagination: Pagination,
     ) -> PaginatedResponse[WorkspaceMemberResponse]:
-        await verify_workspace_role(
+        await self._get_workspace_for_role(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=ALL_WORKSPACE_ROLES,
         )
         items = await self.member_repo.get_multi_by_workspace(
@@ -164,12 +195,10 @@ class WorkspaceService:
         current_user: User,
         payload: WorkspaceMemberInvite,
     ) -> WorkspaceMember:
-        await verify_workspace_role(
+        await self._get_workspace_for_role(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
+            current_user=current_user,
             allowed_roles=WORKSPACE_OWNER_ROLES,
         )
 
@@ -210,24 +239,13 @@ class WorkspaceService:
         current_user: User,
         payload: WorkspaceMemberRoleUpdate,
     ) -> WorkspaceMember:
-        await verify_workspace_role(
+        member = await self._get_member_for_owner_action(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
-            allowed_roles=WORKSPACE_OWNER_ROLES,
+            target_user_id=target_user_id,
+            current_user=current_user,
+            owner_error_msg=messages.MSG_CANNOT_MODIFY_OWNER_ROLE,
         )
-
-        member = await self.member_repo.get_by_workspace_and_user(
-            db, workspace_id=workspace_id, user_id=target_user_id
-        )
-        if not member:
-            raise NotFoundException(messages.MSG_WORKSPACE_MEMBER_NOT_FOUND)
-
-        if member.role == WorkspaceRole.OWNER:
-            raise BadRequestException(messages.MSG_CANNOT_MODIFY_OWNER_ROLE)
-
         return await self.member_repo.update(db, db_obj=member, obj_in=payload)
 
     async def remove_member(
@@ -237,22 +255,11 @@ class WorkspaceService:
         target_user_id: int,
         current_user: User,
     ) -> None:
-        await verify_workspace_role(
+        member = await self._get_member_for_owner_action(
             db,
-            self.workspace_repo,
-            self.member_repo,
             workspace_id=workspace_id,
-            user_id=current_user.id,
-            allowed_roles=WORKSPACE_OWNER_ROLES,
+            target_user_id=target_user_id,
+            current_user=current_user,
+            owner_error_msg=messages.MSG_CANNOT_REMOVE_WORKSPACE_OWNER,
         )
-
-        member = await self.member_repo.get_by_workspace_and_user(
-            db, workspace_id=workspace_id, user_id=target_user_id
-        )
-        if not member:
-            raise NotFoundException(messages.MSG_WORKSPACE_MEMBER_NOT_FOUND)
-
-        if member.role == WorkspaceRole.OWNER:
-            raise BadRequestException(messages.MSG_CANNOT_REMOVE_WORKSPACE_OWNER)
-
         await self.member_repo.delete(db, id=member.id)

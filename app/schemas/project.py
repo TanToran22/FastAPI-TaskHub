@@ -33,17 +33,13 @@ class ProjectUpdate(CoreBaseSchema):
         default=None,
         max_length=constants.PROJECT_DESCRIPTION_MAX_LENGTH,
     )
-    status: ProjectStatus | None = None
 
-    @field_validator("name", "status")
+    @field_validator("name")
     @classmethod
-    def validate_required_fields_not_null(
-        cls, value: str | ProjectStatus | None, info: object
-    ) -> str | ProjectStatus:
-        field_name = getattr(info, "field_name", "field")
+    def validate_name_not_null(cls, value: str | None) -> str:
         if value is None:
             raise ValueError(
-                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name=field_name)
+                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name="name")
             )
         return value
 
