@@ -67,7 +67,7 @@ async def test_workspace_crud_and_owner_membership(
     outsider_get = await client.get(
         f"/api/v1/workspaces/{ws_id}", headers=outsider_headers
     )
-    assert outsider_get.status_code == 403
+    assert outsider_get.status_code == 404
 
     null_patch = await client.patch(
         f"/api/v1/workspaces/{ws_id}",
@@ -86,7 +86,7 @@ async def test_workspace_crud_and_owner_membership(
 
     assert (
         await client.delete(f"/api/v1/workspaces/{ws_id}", headers=outsider_headers)
-    ).status_code == 403
+    ).status_code == 404
 
     assert (
         await client.delete(f"/api/v1/workspaces/{ws_id}", headers=owner_headers)
@@ -239,7 +239,7 @@ async def test_workspace_member_invite_role_limits_and_rbac(
 
     assert (
         await client.get(f"/api/v1/workspaces/{ws_id}", headers=editor_headers)
-    ).status_code == 403
+    ).status_code == 404
 
 
 @pytest.mark.asyncio
@@ -332,15 +332,13 @@ async def test_project_crud_archive_filter_and_rbac(
     assert arch_res.status_code == 200
     assert arch_res.json()["status"] == "ARCHIVED"
 
-    # PATCH cannot modify status or reopen archived project
-    reopen_attempt = await client.patch(
+    # Archived project blocks PATCH with 409 Conflict
+    archived_patch = await client.patch(
         f"/api/v1/projects/{p2_id}",
-        json={"name": "Legacy Renamed", "status": "ACTIVE"},
+        json={"name": "Legacy Renamed"},
         headers=editor_headers,
     )
-    assert reopen_attempt.status_code == 200
-    assert reopen_attempt.json()["name"] == "Legacy Renamed"
-    assert reopen_attempt.json()["status"] == "ARCHIVED"
+    assert archived_patch.status_code == 409
 
     active_list = await client.get(
         f"/api/v1/workspaces/{ws_id}/projects?status_filter=ACTIVE",

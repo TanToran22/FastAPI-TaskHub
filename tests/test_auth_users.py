@@ -123,10 +123,7 @@ async def test_user_me_profile_password_change_and_protected_tasks(
     unauth_res = await client.get("/api/v1/users/me")
     assert unauth_res.status_code == 401
 
-    unauth_tasks = await client.get("/api/v1/tasks")
-    assert unauth_tasks.status_code == 401
-
-    reg_res = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={
             "email": "charlie@example.com",
@@ -134,21 +131,12 @@ async def test_user_me_profile_password_change_and_protected_tasks(
             "password": "oldpassword123",
         },
     )
-    user_id = reg_res.json()["id"]
 
     login_res = await client.post(
         "/api/v1/auth/login",
         json={"email": "charlie@example.com", "password": "oldpassword123"},
     )
     headers = {"Authorization": f"Bearer {login_res.json()['access_token']}"}
-
-    task_res = await client.post(
-        "/api/v1/tasks",
-        json={"title": "Authenticated Task"},
-        headers=headers,
-    )
-    assert task_res.status_code == 201
-    assert task_res.json()["created_by"] == user_id
 
     me_res = await client.get("/api/v1/users/me", headers=headers)
     assert me_res.status_code == 200

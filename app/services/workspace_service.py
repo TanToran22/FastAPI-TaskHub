@@ -13,7 +13,7 @@ from app.core.pagination import Pagination
 from app.core.permissions import (
     ALL_WORKSPACE_ROLES,
     WORKSPACE_OWNER_ROLES,
-    verify_workspace_role,
+    get_workspace_access,
 )
 from app.models.enums import WorkspaceRole
 from app.models.models import User, Workspace, WorkspaceMember
@@ -44,23 +44,6 @@ class WorkspaceService:
         self.member_repo = member_repo
         self.user_repo = user_repo
 
-    async def _get_workspace_for_role(
-        self,
-        db: AsyncSession,
-        workspace_id: int,
-        current_user: User,
-        allowed_roles: frozenset[WorkspaceRole],
-    ) -> Workspace:
-        workspace, _ = await verify_workspace_role(
-            db,
-            self.workspace_repo,
-            self.member_repo,
-            workspace_id=workspace_id,
-            user_id=current_user.id,
-            allowed_roles=allowed_roles,
-        )
-        return workspace
-
     async def _get_member_for_owner_action(
         self,
         db: AsyncSession,
@@ -69,7 +52,7 @@ class WorkspaceService:
         current_user: User,
         owner_error_msg: str,
     ) -> WorkspaceMember:
-        await self._get_workspace_for_role(
+        await get_workspace_access(
             db,
             workspace_id=workspace_id,
             current_user=current_user,
@@ -94,7 +77,6 @@ class WorkspaceService:
             db,
             obj_in={"name": payload.name, "owner_id": current_user.id},
         )
-        # Always add creator as OWNER member in the same transaction
         await self.member_repo.create(
             db,
             obj_in={
@@ -128,12 +110,13 @@ class WorkspaceService:
         workspace_id: int,
         current_user: User,
     ) -> Workspace:
-        return await self._get_workspace_for_role(
+        workspace, _ = await get_workspace_access(
             db,
             workspace_id=workspace_id,
             current_user=current_user,
             allowed_roles=ALL_WORKSPACE_ROLES,
         )
+        return workspace
 
     async def update_workspace(
         self,
@@ -142,7 +125,7 @@ class WorkspaceService:
         current_user: User,
         payload: WorkspaceUpdate,
     ) -> Workspace:
-        workspace = await self._get_workspace_for_role(
+        workspace, _ = await get_workspace_access(
             db,
             workspace_id=workspace_id,
             current_user=current_user,
@@ -156,7 +139,7 @@ class WorkspaceService:
         workspace_id: int,
         current_user: User,
     ) -> None:
-        workspace = await self._get_workspace_for_role(
+        workspace, _ = await get_workspace_access(
             db,
             workspace_id=workspace_id,
             current_user=current_user,
@@ -171,7 +154,7 @@ class WorkspaceService:
         current_user: User,
         pagination: Pagination,
     ) -> PaginatedResponse[WorkspaceMemberResponse]:
-        await self._get_workspace_for_role(
+        await get_workspace_access(
             db,
             workspace_id=workspace_id,
             current_user=current_user,
@@ -195,22 +178,15 @@ class WorkspaceService:
         current_user: User,
         payload: WorkspaceMemberInvite,
     ) -> WorkspaceMember:
-        await self._get_workspace_for_role(
+        await get_workspace_access(
             db,
             workspace_id=workspace_id,
             current_user=current_user,
             allowed_roles=WORKSPACE_OWNER_ROLES,
         )
-
         target_user = await self.user_repo.get_by_email(db, email=payload.email.lower())
         if not target_user:
             raise NotFoundException(messages.MSG_USER_NOT_FOUND)
-
-        existing = await self.member_repo.get_by_workspace_and_user(
-            db, workspace_id=workspace_id, user_id=target_user.id
-        )
-        if existing:
-            raise ConflictException(messages.MSG_WORKSPACE_MEMBER_ALREADY_EXISTS)
 
         try:
             return await self.member_repo.create(

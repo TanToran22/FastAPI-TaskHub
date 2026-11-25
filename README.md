@@ -1,4 +1,4 @@
-# TaskHub API (Day 4: Workspace & Project Management)
+# TaskHub API (Day 5: Task Lifecycle, Labels & Comments)
 
 Backend FastAPI theo kiến trúc phân tầng Layered Architecture (`endpoints` -> `services` -> `repositories` -> `schemas` / `models`).
 
@@ -7,7 +7,8 @@ Backend FastAPI theo kiến trúc phân tầng Layered Architecture (`endpoints`
 - [x] **Day 1:** Core Setup & Layered Architecture
 - [x] **Day 2:** Database (SQLAlchemy 2.x Async & Alembic Migrations)
 - [x] **Day 3:** Authentication (JWT), User Profile & RBAC Core
-- [x] **Day 4:** Workspace & Project Management (Resource Ownership & Workspace RBAC: `OWNER`, `EDITOR`, `VIEWER`)
+- [x] **Day 4:** Workspace & Project Management (Workspace RBAC: `OWNER`, `EDITOR`, `VIEWER`)
+- [x] **Day 5:** Task Management (Project Tasks, Filtering, Labels, Task-Label Association, Comments & Archive/Unarchive Guard)
 
 ## Hướng dẫn khởi chạy & Kiểm thử
 

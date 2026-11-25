@@ -1,7 +1,6 @@
-from typing import Annotated
+from fastapi import APIRouter, status
 
-from fastapi import APIRouter, Path, status
-
+from app.api.v1.params import UserIdPath, WorkspaceIdPath
 from app.core.dependencies import (
     CurrentActiveUserDep,
     DbSession,
@@ -19,9 +18,6 @@ from app.schemas.workspace import (
 )
 
 router = APIRouter()
-
-WorkspaceIdPath = Annotated[int, Path(gt=0, description="Workspace ID")]
-UserIdPath = Annotated[int, Path(gt=0, description="Target User ID")]
 
 
 @router.post(

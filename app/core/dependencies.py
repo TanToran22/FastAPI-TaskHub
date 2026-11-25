@@ -9,12 +9,16 @@ from app.core.database import get_db
 from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.models.enums import UserRole
 from app.models.models import User
+from app.repositories.comment_repository import CommentRepository
+from app.repositories.label_repository import LabelRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_member_repository import WorkspaceMemberRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.auth_service import AuthService
+from app.services.comment_service import CommentService
+from app.services.label_service import LabelService
 from app.services.project_service import ProjectService
 from app.services.task_service import TaskService
 from app.services.user_service import UserService
@@ -27,6 +31,8 @@ _user_repo_singleton = UserRepository()
 _workspace_repo_singleton = WorkspaceRepository()
 _workspace_member_repo_singleton = WorkspaceMemberRepository()
 _project_repo_singleton = ProjectRepository()
+_label_repo_singleton = LabelRepository()
+_comment_repo_singleton = CommentRepository()
 
 
 def get_task_repository() -> TaskRepository:
@@ -49,8 +55,28 @@ def get_project_repository() -> ProjectRepository:
     return _project_repo_singleton
 
 
+def get_label_repository() -> LabelRepository:
+    return _label_repo_singleton
+
+
+def get_comment_repository() -> CommentRepository:
+    return _comment_repo_singleton
+
+
 def get_task_service() -> TaskService:
-    return TaskService(repository=get_task_repository())
+    return TaskService(
+        task_repo=get_task_repository(),
+        label_repo=get_label_repository(),
+        member_repo=get_workspace_member_repository(),
+    )
+
+
+def get_label_service() -> LabelService:
+    return LabelService(label_repo=get_label_repository())
+
+
+def get_comment_service() -> CommentService:
+    return CommentService(comment_repo=get_comment_repository())
 
 
 def get_auth_service() -> AuthService:
@@ -70,15 +96,13 @@ def get_workspace_service() -> WorkspaceService:
 
 
 def get_project_service() -> ProjectService:
-    return ProjectService(
-        project_repo=get_project_repository(),
-        workspace_repo=get_workspace_repository(),
-        member_repo=get_workspace_member_repository(),
-    )
+    return ProjectService(project_repo=get_project_repository())
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
+LabelServiceDep = Annotated[LabelService, Depends(get_label_service)]
+CommentServiceDep = Annotated[CommentService, Depends(get_comment_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 WorkspaceServiceDep = Annotated[WorkspaceService, Depends(get_workspace_service)]

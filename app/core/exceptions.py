@@ -37,3 +37,7 @@ class ForbiddenException(AppException):
 
 class ConflictException(AppException):
     status_code = status.HTTP_409_CONFLICT
+
+
+class UnprocessableEntityException(AppException):
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY

@@ -1,26 +1,21 @@
-from typing import Annotated
+from fastapi import APIRouter, status
 
-from fastapi import APIRouter, Path, Query, status
-
+from app.api.v1.params import (
+    ProjectIdPath,
+    ProjectStatusQuery,
+    WorkspaceIdPath,
+)
 from app.core.dependencies import (
     CurrentActiveUserDep,
     DbSession,
     ProjectServiceDep,
 )
 from app.core.pagination import PaginationDep
-from app.models.enums import ProjectStatus
 from app.schemas.base import PaginatedResponse
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 
 workspace_projects_router = APIRouter()
 router = APIRouter()
-
-WorkspaceIdPath = Annotated[int, Path(gt=0, description="Workspace ID")]
-ProjectIdPath = Annotated[int, Path(gt=0, description="Project ID")]
-ProjectStatusQuery = Annotated[
-    ProjectStatus | None,
-    Query(description="Optional filter by project status (ACTIVE/ARCHIVED)"),
-]
 
 
 @workspace_projects_router.post(
@@ -49,7 +44,6 @@ async def create_workspace_project(
     response_model=PaginatedResponse[ProjectResponse],
     summary="List projects in a workspace with optional status filter",
     responses={
-        403: {"description": "Not a member of this workspace"},
         404: {"description": "Workspace not found"},
     },
 )
@@ -75,7 +69,6 @@ async def list_workspace_projects(
     response_model=ProjectResponse,
     summary="Get project details (requires workspace membership)",
     responses={
-        403: {"description": "Not a member of the project's workspace"},
         404: {"description": "Project not found"},
     },
 )
@@ -96,6 +89,7 @@ async def get_project(
     responses={
         403: {"description": "Requires OWNER or EDITOR role"},
         404: {"description": "Project not found"},
+        409: {"description": "Project is archived"},
         422: {"description": "Validation error (e.g., null name)"},
     },
 )
@@ -126,6 +120,25 @@ async def archive_project(
     service: ProjectServiceDep,
 ) -> ProjectResponse:
     project = await service.archive_project(db, project_id, current_user)
+    return ProjectResponse.model_validate(project)
+
+
+@router.post(
+    "/{project_id}/unarchive",
+    response_model=ProjectResponse,
+    summary="Unarchive a project back to ACTIVE (OWNER or EDITOR)",
+    responses={
+        403: {"description": "Requires OWNER or EDITOR role"},
+        404: {"description": "Project not found"},
+    },
+)
+async def unarchive_project(
+    project_id: ProjectIdPath,
+    db: DbSession,
+    current_user: CurrentActiveUserDep,
+    service: ProjectServiceDep,
+) -> ProjectResponse:
+    project = await service.unarchive_project(db, project_id, current_user)
     return ProjectResponse.model_validate(project)
 
 

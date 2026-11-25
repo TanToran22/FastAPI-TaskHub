@@ -225,6 +225,7 @@ class Project(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (Index("ix_tasks_project_status", "project_id", "status"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int | None] = mapped_column(
@@ -338,6 +339,7 @@ class Label(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
+    __table_args__ = (Index("ix_comments_task_created_at", "task_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[int] = mapped_column(

@@ -1,43 +1,118 @@
 import logging
 
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import messages
-from app.core.exceptions import ConflictException, NotFoundException
+from app.core.exceptions import (
+    ConflictException,
+    NotFoundException,
+    UnprocessableEntityException,
+)
 from app.core.pagination import Pagination
-from app.models.models import Task
+from app.core.permissions import (
+    ALL_WORKSPACE_ROLES,
+    WORKSPACE_WRITE_ROLES,
+    get_project_access,
+    get_task_access,
+)
+from app.models.enums import TaskPriority, TaskStatus
+from app.models.models import Task, User
+from app.repositories.label_repository import LabelRepository
 from app.repositories.task_repository import TaskRepository
+from app.repositories.workspace_member_repository import WorkspaceMemberRepository
 from app.schemas.base import PaginatedResponse
 from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 logger = logging.getLogger("taskhub")
 
 
-def _classify_integrity_error(exc: IntegrityError | OperationalError) -> str:
-    raw_msg = str(exc.orig).lower()
-    if "foreign key" in raw_msg:
-        return messages.MSG_FOREIGN_KEY_VIOLATION
-    if "not null" in raw_msg or "null value" in raw_msg:
-        return "Required database field cannot be null."
-    return messages.MSG_INTEGRITY_ERROR
-
-
 class TaskService:
-    def __init__(self, repository: TaskRepository) -> None:
-        self.repository = repository
+    def __init__(
+        self,
+        task_repo: TaskRepository,
+        label_repo: LabelRepository,
+        member_repo: WorkspaceMemberRepository,
+    ) -> None:
+        self.task_repo = task_repo
+        self.label_repo = label_repo
+        self.member_repo = member_repo
 
-    async def get_task_or_404(self, db: AsyncSession, task_id: int) -> Task:
-        task = await self.repository.get_by_id(db, id=task_id)
-        if not task:
-            raise NotFoundException(messages.MSG_TASK_NOT_FOUND)
-        return task
+    async def _validate_assignee(
+        self,
+        db: AsyncSession,
+        *,
+        workspace_id: int,
+        assignee_id: int | None,
+    ) -> None:
+        if assignee_id is None:
+            return
+        member = await self.member_repo.get_by_workspace_and_user(
+            db, workspace_id=workspace_id, user_id=assignee_id
+        )
+        if not member:
+            raise UnprocessableEntityException(
+                messages.MSG_ASSIGNEE_NOT_WORKSPACE_MEMBER
+            )
+
+    async def create_task(
+        self,
+        db: AsyncSession,
+        *,
+        project_id: int,
+        current_user: User,
+        payload: TaskCreate,
+    ) -> Task:
+        project, _ = await get_project_access(
+            db,
+            project_id=project_id,
+            current_user=current_user,
+            allowed_roles=WORKSPACE_WRITE_ROLES,
+            require_active=True,
+        )
+        await self._validate_assignee(
+            db, workspace_id=project.workspace_id, assignee_id=payload.assignee_id
+        )
+        create_data = payload.model_dump(exclude_unset=True)
+        create_data["project_id"] = project.id
+        create_data["created_by"] = current_user.id
+        create_data["status"] = TaskStatus.TODO
+        task = await self.task_repo.create(db, obj_in=create_data)
+        loaded = await self.task_repo.get_by_id_with_labels(db, task_id=task.id)
+        return loaded or task
 
     async def list_tasks(
-        self, db: AsyncSession, pagination: Pagination
+        self,
+        db: AsyncSession,
+        *,
+        project_id: int,
+        current_user: User,
+        pagination: Pagination,
+        statuses: list[TaskStatus] | None = None,
+        priorities: list[TaskPriority] | None = None,
+        assignee_id: int | None = None,
     ) -> PaginatedResponse[TaskResponse]:
-        items = await self.repository.get_multi(db, pagination=pagination)
-        total = await self.repository.count(db)
+        await get_project_access(
+            db,
+            project_id=project_id,
+            current_user=current_user,
+            allowed_roles=ALL_WORKSPACE_ROLES,
+        )
+        items = await self.task_repo.get_multi_by_project(
+            db,
+            project_id=project_id,
+            pagination=pagination,
+            statuses=statuses,
+            priorities=priorities,
+            assignee_id=assignee_id,
+        )
+        total = await self.task_repo.count_by_project(
+            db,
+            project_id=project_id,
+            statuses=statuses,
+            priorities=priorities,
+            assignee_id=assignee_id,
+        )
         return PaginatedResponse[TaskResponse](
             items=[TaskResponse.model_validate(item) for item in items],
             total=total,
@@ -45,42 +120,113 @@ class TaskService:
             limit=pagination.limit,
         )
 
-    async def create_task(
-        self, db: AsyncSession, payload: TaskCreate, created_by: int
+    async def get_task(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: int,
+        current_user: User,
     ) -> Task:
-        create_data = payload.model_dump(exclude_unset=True)
-        create_data["created_by"] = created_by
-        try:
-            return await self.repository.create(db, obj_in=create_data)
-        except (IntegrityError, OperationalError) as exc:
-            if (
-                isinstance(exc, OperationalError)
-                and "foreign key" not in str(exc.orig).lower()
-            ):
-                raise
-            await db.rollback()
-            err_msg = _classify_integrity_error(exc)
-            logger.warning("IntegrityError in create_task: %s", exc.orig)
-            raise ConflictException(err_msg, details=str(exc.orig)) from exc
+        task, _, _ = await get_task_access(
+            db,
+            task_id=task_id,
+            current_user=current_user,
+            allowed_roles=ALL_WORKSPACE_ROLES,
+            load_labels=True,
+        )
+        return task
 
     async def patch_task(
-        self, db: AsyncSession, task_id: int, payload: TaskUpdate
+        self,
+        db: AsyncSession,
+        *,
+        task_id: int,
+        current_user: User,
+        payload: TaskUpdate,
     ) -> Task:
-        task = await self.get_task_or_404(db, task_id)
-        try:
-            return await self.repository.update(db, db_obj=task, obj_in=payload)
-        except (IntegrityError, OperationalError) as exc:
-            if (
-                isinstance(exc, OperationalError)
-                and "foreign key" not in str(exc.orig).lower()
-            ):
-                raise
-            await db.rollback()
-            err_msg = _classify_integrity_error(exc)
-            logger.warning("IntegrityError in patch_task: %s", exc.orig)
-            raise ConflictException(err_msg, details=str(exc.orig)) from exc
+        task, project, _ = await get_task_access(
+            db,
+            task_id=task_id,
+            current_user=current_user,
+            allowed_roles=WORKSPACE_WRITE_ROLES,
+            require_active=True,
+            load_labels=True,
+        )
+        update_data = payload.model_dump(exclude_unset=True)
+        if "assignee_id" in update_data:
+            await self._validate_assignee(
+                db,
+                workspace_id=project.workspace_id,
+                assignee_id=update_data["assignee_id"],
+            )
+        updated = await self.task_repo.update(db, db_obj=task, obj_in=update_data)
+        loaded = await self.task_repo.get_by_id_with_labels(db, task_id=updated.id)
+        return loaded or updated
 
-    async def delete_task(self, db: AsyncSession, task_id: int) -> None:
-        deleted = await self.repository.delete(db, id=task_id)
-        if not deleted:
-            raise NotFoundException(messages.MSG_TASK_NOT_FOUND)
+    async def delete_task(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: int,
+        current_user: User,
+    ) -> None:
+        task, _, _ = await get_task_access(
+            db,
+            task_id=task_id,
+            current_user=current_user,
+            allowed_roles=WORKSPACE_WRITE_ROLES,
+            require_active=True,
+        )
+        await self.task_repo.delete(db, id=task.id)
+
+    async def assign_label(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: int,
+        label_id: int,
+        current_user: User,
+    ) -> Task:
+        task, project, _ = await get_task_access(
+            db,
+            task_id=task_id,
+            current_user=current_user,
+            allowed_roles=WORKSPACE_WRITE_ROLES,
+            require_active=True,
+        )
+        label = await self.label_repo.get_by_id(db, id=label_id)
+        if not label:
+            raise NotFoundException(messages.MSG_LABEL_NOT_FOUND)
+        if label.project_id != project.id:
+            raise UnprocessableEntityException(messages.MSG_LABEL_PROJECT_MISMATCH)
+
+        try:
+            await self.label_repo.assign_to_task(db, task_id=task.id, label_id=label.id)
+        except IntegrityError as exc:
+            await db.rollback()
+            logger.warning("Duplicate label assignment: %s", exc.orig)
+            raise ConflictException(messages.MSG_TASK_LABEL_ALREADY_ASSIGNED) from exc
+
+        loaded = await self.task_repo.get_by_id_with_labels(db, task_id=task.id)
+        return loaded or task
+
+    async def remove_label(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: int,
+        label_id: int,
+        current_user: User,
+    ) -> None:
+        task, _, _ = await get_task_access(
+            db,
+            task_id=task_id,
+            current_user=current_user,
+            allowed_roles=WORKSPACE_WRITE_ROLES,
+            require_active=True,
+        )
+        deleted_rows = await self.label_repo.remove_from_task(
+            db, task_id=task.id, label_id=label_id
+        )
+        if deleted_rows == 0:
+            raise NotFoundException(messages.MSG_TASK_LABEL_NOT_ASSIGNED)

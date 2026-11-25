@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 
-from pydantic import Field, field_validator
+from pydantic import Field, PositiveInt, field_validator
 
 from app.core import constants, messages
 from app.models.enums import TaskPriority, TaskStatus
 from app.schemas.base import CoreBaseSchema
+from app.schemas.label import LabelResponse
 
 
 def _validate_due_date_not_past(value: datetime | None) -> datetime | None:
@@ -30,8 +31,7 @@ class TaskBase(CoreBaseSchema):
 
 
 class TaskCreate(TaskBase):
-    project_id: int | None = Field(default=None, gt=0)
-    assignee_id: int | None = Field(default=None, gt=0)
+    assignee_id: PositiveInt | None = None
 
     @field_validator("due_date")
     @classmethod
@@ -52,7 +52,7 @@ class TaskUpdate(CoreBaseSchema):
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     due_date: datetime | None = None
-    assignee_id: int | None = Field(default=None, gt=0)
+    assignee_id: PositiveInt | None = None
 
     @field_validator("title", "status", "priority")
     @classmethod
@@ -79,3 +79,4 @@ class TaskResponse(TaskBase):
     assignee_id: int | None = None
     created_by: int | None = None
     created_at: datetime
+    labels: list[LabelResponse] = Field(default_factory=list)
