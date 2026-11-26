@@ -194,11 +194,11 @@ class TaskService:
             allowed_roles=WORKSPACE_WRITE_ROLES,
             require_active=True,
         )
-        label = await self.label_repo.get_by_id(db, id=label_id)
+        label = await self.label_repo.get_by_id_and_project(
+            db, label_id=label_id, project_id=project.id
+        )
         if not label:
             raise NotFoundException(messages.MSG_LABEL_NOT_FOUND)
-        if label.project_id != project.id:
-            raise UnprocessableEntityException(messages.MSG_LABEL_PROJECT_MISMATCH)
 
         try:
             await self.label_repo.assign_to_task(db, task_id=task.id, label_id=label.id)

@@ -7,6 +7,7 @@ MSG_LABEL_NOT_FOUND = "Label not found."
 MSG_COMMENT_NOT_FOUND = "Comment not found."
 
 MSG_FIELD_CANNOT_BE_NULL = "Field '{field_name}' cannot be null if provided."
+MSG_DUE_DATE_IN_PAST = "due_date cannot be in the past."
 MSG_FOREIGN_KEY_VIOLATION = (
     "Foreign key constraint violation: referenced resource does not exist."
 )
@@ -28,11 +29,13 @@ MSG_WORKSPACE_MEMBER_ALREADY_EXISTS = "User is already a member of this workspac
 MSG_CANNOT_REMOVE_WORKSPACE_OWNER = "Cannot remove the workspace owner."
 MSG_CANNOT_MODIFY_OWNER_ROLE = "Cannot change the workspace owner's role."
 MSG_PROJECT_ARCHIVED = "Project is archived and cannot be modified."
+MSG_PROJECT_ALREADY_ARCHIVED = "Project is already archived."
+MSG_PROJECT_NOT_ARCHIVED = "Project is not archived."
 MSG_ASSIGNEE_NOT_WORKSPACE_MEMBER = "Assignee must be a member of the workspace."
 MSG_LABEL_ALREADY_EXISTS = "A label with this name already exists in project."
-MSG_LABEL_PROJECT_MISMATCH = "Label does not belong to the task's project."
 MSG_TASK_LABEL_ALREADY_ASSIGNED = "Label is already assigned to this task."
 MSG_TASK_LABEL_NOT_ASSIGNED = "Label is not assigned to this task."
 MSG_COMMENT_FORBIDDEN = (
-    "Only the comment author, workspace owner, or admin can modify this comment."
+    "Only the comment author with write access, workspace owner, "
+    "or admin can modify this comment."
 )

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt, ValidationInfo, field_validator
 
 from app.core import constants, messages
 from app.models.enums import TaskPriority, TaskStatus
@@ -12,7 +12,7 @@ def _validate_due_date_not_past(value: datetime | None) -> datetime | None:
     if value is not None:
         check_val = value if value.tzinfo else value.replace(tzinfo=UTC)
         if check_val < datetime.now(UTC):
-            raise ValueError("due_date cannot be in the past.")
+            raise ValueError(messages.MSG_DUE_DATE_IN_PAST)
     return value
 
 
@@ -57,12 +57,13 @@ class TaskUpdate(CoreBaseSchema):
     @field_validator("title", "status", "priority")
     @classmethod
     def validate_required_fields_not_null(
-        cls, value: str | TaskStatus | TaskPriority | None, info: object
+        cls,
+        value: str | TaskStatus | TaskPriority | None,
+        info: ValidationInfo,
     ) -> str | TaskStatus | TaskPriority:
-        field_name = getattr(info, "field_name", "field")
         if value is None:
             raise ValueError(
-                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name=field_name)
+                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name=info.field_name)
             )
         return value
 
@@ -75,7 +76,7 @@ class TaskUpdate(CoreBaseSchema):
 class TaskResponse(TaskBase):
     id: int
     status: TaskStatus
-    project_id: int | None = None
+    project_id: int
     assignee_id: int | None = None
     created_by: int | None = None
     created_at: datetime

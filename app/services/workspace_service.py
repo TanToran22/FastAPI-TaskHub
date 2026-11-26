@@ -17,6 +17,7 @@ from app.core.permissions import (
 )
 from app.models.enums import WorkspaceRole
 from app.models.models import User, Workspace, WorkspaceMember
+from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_member_repository import WorkspaceMemberRepository
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -39,10 +40,12 @@ class WorkspaceService:
         workspace_repo: WorkspaceRepository,
         member_repo: WorkspaceMemberRepository,
         user_repo: UserRepository,
+        task_repo: TaskRepository,
     ) -> None:
         self.workspace_repo = workspace_repo
         self.member_repo = member_repo
         self.user_repo = user_repo
+        self.task_repo = task_repo
 
     async def _get_member_for_owner_action(
         self,
@@ -237,5 +240,8 @@ class WorkspaceService:
             target_user_id=target_user_id,
             current_user=current_user,
             owner_error_msg=messages.MSG_CANNOT_REMOVE_WORKSPACE_OWNER,
+        )
+        await self.task_repo.unassign_user_in_workspace(
+            db, workspace_id=workspace_id, user_id=target_user_id
         )
         await self.member_repo.delete(db, id=member.id)

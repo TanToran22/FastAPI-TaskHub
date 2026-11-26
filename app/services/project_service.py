@@ -1,5 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import messages
+from app.core.exceptions import ConflictException
 from app.core.pagination import Pagination
 from app.core.permissions import (
     ALL_WORKSPACE_ROLES,
@@ -110,6 +112,8 @@ class ProjectService:
             current_user=current_user,
             allowed_roles=WORKSPACE_WRITE_ROLES,
         )
+        if project.status == ProjectStatus.ARCHIVED:
+            raise ConflictException(messages.MSG_PROJECT_ALREADY_ARCHIVED)
         return await self.project_repo.update(
             db,
             db_obj=project,
@@ -128,6 +132,8 @@ class ProjectService:
             current_user=current_user,
             allowed_roles=WORKSPACE_WRITE_ROLES,
         )
+        if project.status == ProjectStatus.ACTIVE:
+            raise ConflictException(messages.MSG_PROJECT_NOT_ARCHIVED)
         return await self.project_repo.update(
             db,
             db_obj=project,

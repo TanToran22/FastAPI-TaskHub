@@ -92,6 +92,7 @@ def get_workspace_service() -> WorkspaceService:
         workspace_repo=get_workspace_repository(),
         member_repo=get_workspace_member_repository(),
         user_repo=get_user_repository(),
+        task_repo=get_task_repository(),
     )
 
 
@@ -122,10 +123,14 @@ async def get_current_user(
         raise UnauthorizedException(messages.MSG_INVALID_TOKEN)
 
     sub = payload.get("sub")
-    if sub is None or not str(sub).isdigit():
+    try:
+        user_id = int(str(sub))
+    except (TypeError, ValueError) as exc:
+        raise UnauthorizedException(messages.MSG_INVALID_TOKEN) from exc
+    if user_id <= 0:
         raise UnauthorizedException(messages.MSG_INVALID_TOKEN)
 
-    user = await user_repo.get_by_id(db, id=int(sub))
+    user = await user_repo.get_by_id(db, id=user_id)
     if not user:
         raise UnauthorizedException(messages.MSG_INVALID_TOKEN)
     return user

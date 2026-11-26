@@ -1,12 +1,12 @@
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.pagination import Pagination
 from app.models.enums import TaskPriority, TaskStatus
-from app.models.models import Task
+from app.models.models import Project, Task
 from app.repositories.base import BaseRepository
 from app.schemas.task import TaskCreate, TaskUpdate
 
@@ -86,3 +86,24 @@ class TaskRepository(BaseRepository[Task, TaskCreate, TaskUpdate]):
         query = select(func.count(Task.id)).where(*filters)
         result = await db.execute(query)
         return result.scalar_one()
+
+    async def unassign_user_in_workspace(
+        self,
+        db: AsyncSession,
+        *,
+        workspace_id: int,
+        user_id: int,
+    ) -> None:
+        project_ids_subq = select(Project.id).where(
+            Project.workspace_id == workspace_id
+        )
+        stmt = (
+            update(Task)
+            .where(
+                Task.project_id.in_(project_ids_subq),
+                Task.assignee_id == user_id,
+            )
+            .values(assignee_id=None)
+        )
+        await db.execute(stmt)
+        await db.flush()

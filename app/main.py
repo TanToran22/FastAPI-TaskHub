@@ -2,7 +2,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from app.api.v1.api_router import api_router
@@ -41,9 +41,15 @@ def create_application() -> FastAPI:
             logger.error("AppException %s: %s", exc.status_code, exc.message)
         else:
             logger.warning("AppException %s: %s", exc.status_code, exc.message)
+
+        headers: dict[str, str] | None = None
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            headers = {"WWW-Authenticate": "Bearer"}
+
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.message},
+            headers=headers,
         )
 
     application.include_router(api_router, prefix=settings.API_V1_STR)

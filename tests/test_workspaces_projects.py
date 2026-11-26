@@ -341,7 +341,7 @@ async def test_project_crud_archive_filter_and_rbac(
     assert archived_patch.status_code == 409
 
     active_list = await client.get(
-        f"/api/v1/workspaces/{ws_id}/projects?status_filter=ACTIVE",
+        f"/api/v1/workspaces/{ws_id}/projects?status=ACTIVE",
         headers=viewer_headers,
     )
     assert active_list.status_code == 200
@@ -349,7 +349,7 @@ async def test_project_crud_archive_filter_and_rbac(
     assert active_list.json()["items"][0]["id"] == p1_id
 
     archived_list = await client.get(
-        f"/api/v1/workspaces/{ws_id}/projects?status_filter=ARCHIVED",
+        f"/api/v1/workspaces/{ws_id}/projects?status=ARCHIVED",
         headers=viewer_headers,
     )
     assert archived_list.status_code == 200

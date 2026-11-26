@@ -1,6 +1,9 @@
+from typing import Any
+
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import Select
 
 from app.core import messages
 from app.core.exceptions import (
@@ -38,7 +41,6 @@ def _check_membership_and_role(
     if current_user.role == UserRole.ADMIN:
         return member_role
     if member_role is None:
-        # Return 404 consistently for outsiders to avoid leaking resource existence
         raise NotFoundException(not_found_msg)
     if member_role not in allowed_roles:
         raise ForbiddenException(messages.MSG_WORKSPACE_FORBIDDEN)
@@ -48,6 +50,32 @@ def _check_membership_and_role(
 def _check_project_not_archived(project: Project, require_active: bool) -> None:
     if require_active and project.status == ProjectStatus.ARCHIVED:
         raise ConflictException(messages.MSG_PROJECT_ARCHIVED)
+
+
+async def _execute_access_query(
+    db: AsyncSession,
+    *,
+    stmt: Select[Any],
+    current_user: User,
+    allowed_roles: frozenset[WorkspaceRole],
+    not_found_msg: str,
+    require_active: bool = False,
+    project_idx: int | None = None,
+) -> tuple[Any, ...]:
+    row = (await db.execute(stmt)).first()
+    if not row:
+        raise NotFoundException(not_found_msg)
+
+    member_role = row[-1]
+    role = _check_membership_and_role(
+        current_user=current_user,
+        member_role=member_role,
+        allowed_roles=allowed_roles,
+        not_found_msg=not_found_msg,
+    )
+    if project_idx is not None:
+        _check_project_not_archived(row[project_idx], require_active)
+    return (*row[:-1], role)
 
 
 async def get_workspace_access(
@@ -68,14 +96,10 @@ async def get_workspace_access(
         )
         .where(Workspace.id == workspace_id)
     )
-    row = (await db.execute(stmt)).first()
-    if not row:
-        raise NotFoundException(messages.MSG_WORKSPACE_NOT_FOUND)
-
-    workspace, member_role = row[0], row[1]
-    role = _check_membership_and_role(
+    workspace, role = await _execute_access_query(
+        db,
+        stmt=stmt,
         current_user=current_user,
-        member_role=member_role,
         allowed_roles=allowed_roles,
         not_found_msg=messages.MSG_WORKSPACE_NOT_FOUND,
     )
@@ -101,18 +125,15 @@ async def get_project_access(
         )
         .where(Project.id == project_id)
     )
-    row = (await db.execute(stmt)).first()
-    if not row:
-        raise NotFoundException(messages.MSG_PROJECT_NOT_FOUND)
-
-    project, member_role = row[0], row[1]
-    role = _check_membership_and_role(
+    project, role = await _execute_access_query(
+        db,
+        stmt=stmt,
         current_user=current_user,
-        member_role=member_role,
         allowed_roles=allowed_roles,
         not_found_msg=messages.MSG_PROJECT_NOT_FOUND,
+        require_active=require_active,
+        project_idx=0,
     )
-    _check_project_not_archived(project, require_active)
     return project, role
 
 
@@ -140,18 +161,15 @@ async def get_task_access(
     if load_labels:
         stmt = stmt.options(selectinload(Task.labels))
 
-    row = (await db.execute(stmt)).first()
-    if not row:
-        raise NotFoundException(messages.MSG_TASK_NOT_FOUND)
-
-    task, project, member_role = row[0], row[1], row[2]
-    role = _check_membership_and_role(
+    task, project, role = await _execute_access_query(
+        db,
+        stmt=stmt,
         current_user=current_user,
-        member_role=member_role,
         allowed_roles=allowed_roles,
         not_found_msg=messages.MSG_TASK_NOT_FOUND,
+        require_active=require_active,
+        project_idx=1,
     )
-    _check_project_not_archived(project, require_active)
     return task, project, role
 
 
@@ -175,18 +193,15 @@ async def get_label_access(
         )
         .where(Label.id == label_id)
     )
-    row = (await db.execute(stmt)).first()
-    if not row:
-        raise NotFoundException(messages.MSG_LABEL_NOT_FOUND)
-
-    label, project, member_role = row[0], row[1], row[2]
-    role = _check_membership_and_role(
+    label, project, role = await _execute_access_query(
+        db,
+        stmt=stmt,
         current_user=current_user,
-        member_role=member_role,
         allowed_roles=allowed_roles,
         not_found_msg=messages.MSG_LABEL_NOT_FOUND,
+        require_active=require_active,
+        project_idx=1,
     )
-    _check_project_not_archived(project, require_active)
     return label, project, role
 
 
@@ -211,21 +226,17 @@ async def get_comment_access(
         )
         .where(Comment.id == comment_id)
     )
-    row = (await db.execute(stmt)).first()
-    if not row:
-        raise NotFoundException(messages.MSG_COMMENT_NOT_FOUND)
-
-    comment, project, member_role = row[0], row[1], row[2]
-    role = _check_membership_and_role(
+    comment, project, role = await _execute_access_query(
+        db,
+        stmt=stmt,
         current_user=current_user,
-        member_role=member_role,
         allowed_roles=ALL_WORKSPACE_ROLES,
         not_found_msg=messages.MSG_COMMENT_NOT_FOUND,
     )
     if require_write and not (
         current_user.role == UserRole.ADMIN
         or role == WorkspaceRole.OWNER
-        or comment.author_id == current_user.id
+        or (role in WORKSPACE_WRITE_ROLES and comment.author_id == current_user.id)
     ):
         raise ForbiddenException(messages.MSG_COMMENT_FORBIDDEN)
 

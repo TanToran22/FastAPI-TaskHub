@@ -1,4 +1,4 @@
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 
 from app.core import constants, messages
 from app.schemas.base import CoreBaseSchema
@@ -35,11 +35,10 @@ class LabelUpdate(CoreBaseSchema):
 
     @field_validator("name", "color")
     @classmethod
-    def validate_fields_not_null(cls, value: str | None, info: object) -> str:
-        field_name = getattr(info, "field_name", "field")
+    def validate_fields_not_null(cls, value: str | None, info: ValidationInfo) -> str:
         if value is None:
             raise ValueError(
-                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name=field_name)
+                messages.MSG_FIELD_CANNOT_BE_NULL.format(field_name=info.field_name)
             )
         return value
 

@@ -13,15 +13,24 @@ CommentIdPath = Annotated[int, Path(gt=0, description="Comment ID")]
 
 ProjectStatusQuery = Annotated[
     ProjectStatus | None,
-    Query(description="Optional filter by project status (ACTIVE/ARCHIVED)"),
+    Query(
+        alias="status",
+        description="Optional filter by project status (ACTIVE/ARCHIVED)",
+    ),
 ]
 TaskStatusFilterQuery = Annotated[
     list[TaskStatus] | None,
-    Query(description="Filter tasks by one or more statuses"),
+    Query(
+        alias="status",
+        description="Filter tasks by one or more statuses",
+    ),
 ]
 TaskPriorityFilterQuery = Annotated[
     list[TaskPriority] | None,
-    Query(description="Filter tasks by one or more priorities"),
+    Query(
+        alias="priority",
+        description="Filter tasks by one or more priorities",
+    ),
 ]
 AssigneeIdFilterQuery = Annotated[
     int | None,

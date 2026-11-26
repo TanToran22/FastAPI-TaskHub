@@ -93,10 +93,14 @@ class AuthService:
             raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN)
 
         sub = token_data.get("sub")
-        if sub is None or not str(sub).isdigit():
+        try:
+            user_id = int(str(sub))
+        except (TypeError, ValueError) as exc:
+            raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN) from exc
+        if user_id <= 0:
             raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN)
 
-        user = await self.user_repository.get_by_id(db, id=int(sub))
+        user = await self.user_repository.get_by_id(db, id=user_id)
         if not user:
             raise UnauthorizedException(messages.MSG_INVALID_REFRESH_TOKEN)
 

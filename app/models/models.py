@@ -225,14 +225,15 @@ class Project(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
-    __table_args__ = (Index("ix_tasks_project_status", "project_id", "status"),)
+    __table_args__ = (
+        Index("ix_tasks_project_created_id", "project_id", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    project_id: Mapped[int | None] = mapped_column(
+    project_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
+        nullable=False,
     )
     assignee_id: Mapped[int | None] = mapped_column(
         Integer,
@@ -281,7 +282,7 @@ class Task(Base):
         index=True,
     )
 
-    project: Mapped["Project | None"] = relationship("Project", back_populates="tasks")
+    project: Mapped["Project"] = relationship("Project", back_populates="tasks")
     assignee: Mapped["User | None"] = relationship(
         "User",
         back_populates="assigned_tasks",
@@ -346,7 +347,6 @@ class Comment(Base):
         Integer,
         ForeignKey("tasks.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     author_id: Mapped[int] = mapped_column(
         Integer,

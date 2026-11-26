@@ -11,6 +11,20 @@ class LabelRepository(BaseRepository[Label, LabelCreate, LabelUpdate]):
     def __init__(self) -> None:
         super().__init__(model=Label)
 
+    async def get_by_id_and_project(
+        self,
+        db: AsyncSession,
+        *,
+        label_id: int,
+        project_id: int,
+    ) -> Label | None:
+        query = select(Label).where(
+            Label.id == label_id,
+            Label.project_id == project_id,
+        )
+        result = await db.execute(query)
+        return result.scalars().first()
+
     async def get_multi_by_project(
         self,
         db: AsyncSession,
